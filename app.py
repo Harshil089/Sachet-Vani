@@ -127,6 +127,7 @@ def _is_ml_service_request_authorized():
 
     auth_header = request.headers.get('Authorization', '').strip()
     token_header = request.headers.get('X-ML-Service-Token', '').strip()
+    legacy_token_header = request.headers.get('ML_SERVICE_TOKEN', '').strip()
 
     if auth_header.lower().startswith('bearer '):
         bearer = auth_header.split(' ', 1)[1].strip()
@@ -136,6 +137,18 @@ def _is_ml_service_request_authorized():
     if token_header and token_header == ML_SERVICE_TOKEN:
         return True
 
+    if legacy_token_header and legacy_token_header == ML_SERVICE_TOKEN:
+        return True
+
+    return False
+
+
+def _is_ml_request_allowed_for_local_app_user():
+    """Allow logged-in first-party web users to call local ML endpoints."""
+    if current_user.is_authenticated:
+        return True
+    if session.get('police_logged_in'):
+        return True
     return False
 
 
@@ -2256,7 +2269,7 @@ def api_ml_predict():
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
-    if not _is_ml_service_request_authorized():
+    if not _is_ml_service_request_authorized() and not _is_ml_request_allowed_for_local_app_user():
         return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
 
     payload = request.get_json() or {}
@@ -2325,7 +2338,7 @@ def api_ml_refine():
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
-    if not _is_ml_service_request_authorized():
+    if not _is_ml_service_request_authorized() and not _is_ml_request_allowed_for_local_app_user():
         return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
 
     payload = request.get_json() or {}
