@@ -65,7 +65,9 @@ _ml_case_cache_lock = threading.Lock()
 _ML_CACHE_MAX_ENTRIES = 500
 _ML_CACHE_TTL_SECONDS = int(os.environ.get('ML_CACHE_TTL_SECONDS', '86400'))
 _redis_client = None
-IS_SERVERLESS_ENV = bool(os.environ.get('RENDER') or os.environ.get('VERCEL'))
+# Only Vercel should proxy ML requests to an external ML service.
+# Render is used to host the heavy ML app itself.
+IS_SERVERLESS_ENV = bool(os.environ.get('VERCEL'))
 ML_SERVICE_URL = (os.environ.get('ML_SERVICE_URL') or '').strip().rstrip('/')
 ML_SERVICE_TOKEN = (os.environ.get('ML_SERVICE_TOKEN') or '').strip()
 ML_SERVICE_TIMEOUT_SECONDS = int(os.environ.get('ML_SERVICE_TIMEOUT_SECONDS', '30'))
