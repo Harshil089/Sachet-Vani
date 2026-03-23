@@ -69,7 +69,6 @@ _redis_client = None
 # Render is used to host the heavy ML app itself.
 IS_SERVERLESS_ENV = bool(os.environ.get('VERCEL'))
 ML_SERVICE_URL = (os.environ.get('ML_SERVICE_URL') or '').strip().rstrip('/')
-ML_SERVICE_TOKEN = (os.environ.get('ML_SERVICE_TOKEN') or '').strip()
 ML_SERVICE_TIMEOUT_SECONDS = int(os.environ.get('ML_SERVICE_TIMEOUT_SECONDS', '30'))
 
 
@@ -113,43 +112,7 @@ def _ml_cache_key(report_id):
 
 
 def _ml_service_headers():
-    headers = {'Content-Type': 'application/json'}
-    if ML_SERVICE_TOKEN:
-        headers['Authorization'] = f'Bearer {ML_SERVICE_TOKEN}'
-        headers['X-ML-Service-Token'] = ML_SERVICE_TOKEN
-    return headers
-
-
-def _is_ml_service_request_authorized():
-    """Validate inbound token for ML service endpoints when token auth is enabled."""
-    if not ML_SERVICE_TOKEN:
-        return True
-
-    auth_header = request.headers.get('Authorization', '').strip()
-    token_header = request.headers.get('X-ML-Service-Token', '').strip()
-    legacy_token_header = request.headers.get('ML_SERVICE_TOKEN', '').strip()
-
-    if auth_header.lower().startswith('bearer '):
-        bearer = auth_header.split(' ', 1)[1].strip()
-        if bearer == ML_SERVICE_TOKEN:
-            return True
-
-    if token_header and token_header == ML_SERVICE_TOKEN:
-        return True
-
-    if legacy_token_header and legacy_token_header == ML_SERVICE_TOKEN:
-        return True
-
-    return False
-
-
-def _is_ml_request_allowed_for_local_app_user():
-    """Allow logged-in first-party web users to call local ML endpoints."""
-    if current_user.is_authenticated:
-        return True
-    if session.get('police_logged_in'):
-        return True
-    return False
+    return {'Content-Type': 'application/json'}
 
 
 def _serialize_case_input_for_json(case_input):
@@ -2269,9 +2232,6 @@ def api_ml_predict():
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
-    if not _is_ml_service_request_authorized() and not _is_ml_request_allowed_for_local_app_user():
-        return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
-
     payload = request.get_json() or {}
     try:
         # Lazy import to avoid heavy startup cost if models are not present
@@ -2337,9 +2297,6 @@ def api_ml_refine():
             return jsonify(response.json()), response.status_code
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
-
-    if not _is_ml_service_request_authorized() and not _is_ml_request_allowed_for_local_app_user():
-        return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
 
     payload = request.get_json() or {}
     try:
