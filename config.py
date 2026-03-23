@@ -1,5 +1,6 @@
 import os
 from urllib.parse import quote_plus
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from dotenv import load_dotenv
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -22,6 +23,29 @@ def _read_env(*names):
         if value:
             return value
     return None
+
+
+def _sanitize_postgres_url(db_url):
+    """Remove non-libpq query params that break psycopg2 DSN parsing."""
+    if not db_url:
+        return db_url
+
+    try:
+        parsed = urlsplit(db_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+
+        # Common provider metadata params that psycopg2/libpq does not accept.
+        blocked_params = {'supa', 'pgbouncer'}
+        cleaned_query_items = [(k, v) for (k, v) in query_items if k.lower() not in blocked_params]
+
+        if len(cleaned_query_items) == len(query_items):
+            return db_url
+
+        cleaned_query = urlencode(cleaned_query_items)
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, cleaned_query, parsed.fragment))
+    except Exception:
+        # Fallback to original URL if parsing fails.
+        return db_url
 
 class Config:
     # Security: No default secret key in production
@@ -58,6 +82,7 @@ class Config:
         # Use provided database URL (for production)
         if DATABASE_URL.startswith('postgres://'):
             DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        DATABASE_URL = _sanitize_postgres_url(DATABASE_URL)
         SQLALCHEMY_DATABASE_URI = DATABASE_URL
         print(f"✅ Using persistent database (production)")
     else:
