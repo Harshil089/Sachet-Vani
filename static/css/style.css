@@ -3,26 +3,26 @@
 
 /* CSS Variables for consistent theming */
 :root {
-    --primary-color: #e74c3c;
-    --primary-dark: #c0392b;
-    --secondary-color: #3498db;
+    --primary-color: #00152a;
+    --primary-dark: #102a43;
+    --secondary-color: #b6171e;
     --success-color: #27ae60;
     --warning-color: #f39c12;
-    --danger-color: #e74c3c;
+    --danger-color: #ba1a1a;
     --info-color: #17a2b8;
-    --light-color: #f8f9fa;
-    --dark-color: #2c3e50;
-    --gray-100: #f8f9fa;
-    --gray-200: #e9ecef;
-    --gray-300: #dee2e6;
-    --gray-600: #6c757d;
-    --gray-800: #495057;
+    --light-color: #f6fafe;
+    --dark-color: #00152a;
+    --gray-100: #f0f4f8;
+    --gray-200: #eaeef2;
+    --gray-300: #dfe3e7;
+    --gray-600: #74777e;
+    --gray-800: #43474d;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-    --gradient-secondary: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    --gradient-primary: linear-gradient(135deg, #00152a 0%, #102a43 100%);
+    --gradient-secondary: linear-gradient(135deg, #b6171e 0%, #da3433 100%);
     --gradient-success: linear-gradient(135deg, #27ae60 0%, #219a52 100%);
-    --gradient-hero: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --gradient-hero: linear-gradient(135deg, #00152a 0%, #102a43 100%);
 
     /* Shadows */
     --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
@@ -48,7 +48,7 @@ body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     line-height: 1.6;
     color: var(--dark-color);
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #f6fafe;
     background-attachment: fixed;
     min-height: 100vh;
 }

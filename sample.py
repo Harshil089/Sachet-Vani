@@ -13,6 +13,5 @@ if os.path.exists('.env'):
 load_dotenv()
 
 print(f"\nAfter loading .env:")
-print(f"TWILIO_ACCOUNT_SID: {os.environ.get('TWILIO_ACCOUNT_SID', 'NOT FOUND')}")
-print(f"TWILIO_AUTH_TOKEN: {os.environ.get('TWILIO_AUTH_TOKEN', 'NOT FOUND')}")
-print(f"TWILIO_PHONE_NUMBER: {os.environ.get('TWILIO_PHONE_NUMBER', 'NOT FOUND')}")
+print(f"TELEGRAM_BOT_TOKEN: {os.environ.get('TELEGRAM_BOT_TOKEN', 'NOT FOUND')}")
+print(f"TELEGRAM_CHAT_ID: {os.environ.get('TELEGRAM_CHAT_ID', 'NOT FOUND')}")

@@ -231,14 +231,29 @@ def select_numbers_for_location(location_text):
 
     return filtered if filtered else DEMO_PHONE_NUMBERS
 
-# Initialize Twilio - only when needed
-def get_twilio_client():
+# Telegram Bot directly
+import requests
+
+def send_telegram_broadcast(message):
+    token = app.config.get('TELEGRAM_BOT_TOKEN')
+    chat_id = app.config.get('TELEGRAM_CHAT_ID')
+    if not token or not chat_id:
+        print("❌ Telegram credentials not configured")
+        return 0
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        'chat_id': chat_id,
+        'text': message
+    }
     try:
-        from twilio.rest import Client
-        return Client(app.config['TWILIO_ACCOUNT_SID'], app.config['TWILIO_AUTH_TOKEN'])
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        print("✅ Telegram alert sent")
+        return 1
     except Exception as e:
-        print(f"Error creating Twilio client: {str(e)}")
-        return None
+        print(f"❌ Telegram send error: {str(e)}")
+        return 0
 
 # Database Models
 class MissingChild(db.Model):
@@ -498,132 +513,25 @@ def get_location_coordinates(location_name):
     return _geocode_with_nominatim(location_name)
 
 def send_sms_alert(message):
-    """Send SMS alerts to predefined demo phone numbers"""
-    if app.config['DEBUG']:
-        print(f"\n=== SMS DEBUG MODE ===")
-        print(f"Message: {message}")
-        # Mask phone numbers in logs
-        masked_numbers = [n[:3] + '****' + n[-3:] for n in DEMO_PHONE_NUMBERS]
-        print(f"Would send to: {masked_numbers}")
-        print("=== END SMS DEBUG ===\n")
-        return len(DEMO_PHONE_NUMBERS)
-    
-    sent_count = 0
-    failed_numbers = []
-    
-    if not app.config.get('TWILIO_ACCOUNT_SID') or not app.config.get('TWILIO_AUTH_TOKEN'):
-        print("❌ Twilio credentials not configured")
-        return 0
-    
-    if not app.config.get('TWILIO_PHONE_NUMBER'):
-        print("❌ Twilio phone number not configured")
-        return 0
-    
-    if not DEMO_PHONE_NUMBERS:
-        print("❌ No demo phone numbers configured")
-        return 0
-    
-    try:
-        twilio_client = get_twilio_client()
-        if not twilio_client:
-            print("❌ Failed to create Twilio client")
-            return 0
-        
-        for i, phone_number in enumerate(DEMO_PHONE_NUMBERS, 1):
-            try:
-                message_obj = twilio_client.messages.create(
-                    body=message,
-                    from_=app.config['TWILIO_PHONE_NUMBER'],
-                    to=phone_number
-                )
-                sent_count += 1
-                
-            except Exception as e:
-                print(f"❌ Failed to send SMS to {phone_number}: {str(e)}")
-                failed_numbers.append(phone_number)
-                
-    except Exception as e:
-        print(f"❌ Twilio client error: {str(e)}")
-    
-    return sent_count
+    """Fallback function name for existing code, routes to Telegram"""
+    return send_telegram_broadcast(message)
 
 def send_sms_alert_to_numbers(message, phone_numbers):
-    """Send SMS to a specific list of numbers (area-wise routing)."""
-    if app.config['DEBUG']:
-        print(f"\n=== SMS DEBUG MODE (Targeted) ===")
-        print(f"Message: {message}")
-        masked_numbers = [n[:3] + '****' + n[-3:] for n in (phone_numbers or [])]
-        print(f"Would send to: {masked_numbers}")
-        print("=== END SMS DEBUG ===\n")
-        return len(phone_numbers or [])
-
-    if not phone_numbers:
-        return 0
-
-    if not app.config.get('TWILIO_ACCOUNT_SID') or not app.config.get('TWILIO_AUTH_TOKEN'):
-        print("❌ Twilio credentials not configured")
-        return 0
-    if not app.config.get('TWILIO_PHONE_NUMBER'):
-        print("❌ Twilio phone number not configured")
-        return 0
-
-    sent_count = 0
-    try:
-        twilio_client = get_twilio_client()
-        if not twilio_client:
-            print("❌ Failed to create Twilio client")
-            return 0
-
-        for phone_number in phone_numbers:
-            try:
-                _ = twilio_client.messages.create(
-                    body=message,
-                    from_=app.config['TWILIO_PHONE_NUMBER'],
-                    to=phone_number
-                )
-                sent_count += 1
-            except Exception as e:
-                print(f"❌ Failed to send SMS to {phone_number}: {str(e)}")
-    except Exception as e:
-        print(f"❌ Twilio client error: {str(e)}")
-
-    return sent_count
+    """Fallback function name for existing code, routes to Telegram"""
+    return send_telegram_broadcast(message)
 
 def broadcast_all_alerts(message, phone_numbers=None, photo_url=None):
     """
-    Broadcast alert to all configured channels: SMS, Telegram, Discord.
-    
-    Args:
-        message: Text message to send
-        phone_numbers: Optional list of phone numbers for SMS (uses DEMO_PHONE_NUMBERS if None)
-        photo_url: Optional photo URL to include in Telegram/Discord
-    
-    Returns:
-        dict: Results from each channel
+    Broadcast alert to Telegram
     """
     results = {'sms': 0, 'telegram': False, 'discord': False}
     
-    # Send SMS
-    if phone_numbers:
-        results['sms'] = send_sms_alert_to_numbers(message, phone_numbers)
-    else:
-        results['sms'] = send_sms_alert(message)
-    
-    # Send Telegram and Discord if messaging utilities are available
-    if MESSAGING_AVAILABLE:
-        try:
-            results['telegram'] = send_telegram_alert(message, photo_url)
-        except Exception as e:
-            print(f"❌ Telegram broadcast error: {str(e)}")
-        
-        try:
-            results['discord'] = send_discord_alert(message, photo_url)
-        except Exception as e:
-            print(f"❌ Discord broadcast error: {str(e)}")
+    # Send via Telegram
+    success = send_telegram_broadcast(message)
+    results['telegram'] = bool(success)
     
     # Log summary
-    channels_successful = sum(1 for k, v in results.items() if (v > 0 if isinstance(v, int) else v))
-    print(f"📢 Alert broadcast: {channels_successful}/3 channels successful")
+    print(f"📢 Alert broadcast: {'1' if success else '0'}/1 channels successful")
     
     return results
 

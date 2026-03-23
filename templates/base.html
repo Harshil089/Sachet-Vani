@@ -1,162 +1,124 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html class="light" lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Missing Child Alert System{% endblock %}</title>
-
-    <!-- PWA Meta Tags -->
-    <meta name="description" content="Sachet - Community alert system to help find missing children">
-    <meta name="theme-color" content="#667eea">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Sachet">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192x192.png') }}">
-
-    <!-- Preload fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>{% block title %}Sachet Vani | Missing Child Alert System{% endblock %}</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <!-- Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
-
-    <!-- Favicon -->
-    <link rel="icon"
-        href="image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚨</text></svg>">
-</head>
-
-<body>
-    <nav class="navbar navbar-expand-lg fixed-top">
-        <div class="container">
-            <a class="navbar-brand bounce-in" href="{{ url_for('index') }}">
-                <i class="fas fa-shield-alt"></i>
-                Sachet
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">
-                            <i class="fas fa-home me-1"></i>Home
-                        </a>
-                    </li>
-                    {% if session.get('police_logged_in') and not current_user.is_authenticated %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('police_dashboard') }}">
-                            <i class="fas fa-shield-alt me-1"></i>Police Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('police_logout') }}">
-                            <i class="fas fa-sign-out-alt me-1"></i>Logout
-                        </a>
-                    </li>
-                    {% endif %}
-                    {% if current_user.is_authenticated %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('ml_page') }}">
-                            <i class="fas fa-brain me-1"></i>ML Predictions
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
-                            <i class="fas fa-cog me-1"></i>Admin
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </div>
-    </nav>
-
-    <main class="container fade-in">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="row">
-            <div class="col-12">
-                {% for category, message in messages %}
-                <div
-                    class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show slide-in-left">
-                    <i class="fas fa-{{ 'exclamation-circle' if category == 'error' else 'check-circle' }} me-2"></i>
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        {% endwith %}
-
-        {% block content %}{% endblock %}
-    </main>
-
-    <footer class="mt-5">
-        <div class="container text-center">
-            <div class="row">
-                <div class="col-md-4">
-                    <h5><i class="fas fa-shield-alt me-2"></i>Child Alert System</h5>
-                    <p class="mb-0">Built to help bring children home safely.</p>
-                </div>
-                <div class="col-md-4">
-                    <h6>Emergency Contacts</h6>
-                    <p class="mb-0">
-                        <i class="fas fa-phone me-1"></i><a class="text-light text-decoration-none" href="tel:112">112 -
-                            Police</a>
-                    </p>
-                </div>
-                <div class="col-md-4">
-                    <h6>Quick Actions</h6>
-                    <a href="{{ url_for('index') }}" class="text-light text-decoration-none">
-                        <i class="fas fa-search me-1"></i>View Cases
-                    </a>
-                </div>
-            </div>
-            <hr class="my-4 border-light">
-            <p class="mb-0">
-                <i class="fas fa-heart text-danger me-1"></i>
-                &copy; 2024 Child Alert System. Made with care for child safety.
-            </p>
-        </div>
-    </footer>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
-    <!-- Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/static/service-worker.js')
-                    .then(function (registration) {
-                        console.log('ServiceWorker registered:', registration.scope);
-                    })
-                    .catch(function (error) {
-                        console.log('ServiceWorker registration failed:', error);
-                    });
-            });
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            corePlugins: {
+                preflight: false,
+            },
+            theme: {
+                extend: {
+                    colors: {
+                        "on-primary-fixed-variant": "#314863", "surface-tint": "#49607c", "outline": "#74777e",
+                        "on-tertiary-container": "#e07100", "on-background": "#171c1f", "surface-container-low": "#f0f4f8",
+                        "on-tertiary-fixed-variant": "#723600", "on-secondary": "#ffffff", "on-secondary-fixed-variant": "#930010",
+                        "background": "#f6fafe", "error-container": "#ffdad6", "secondary-fixed": "#ffdad6",
+                        "on-tertiary": "#ffffff", "surface": "#f6fafe", "on-surface": "#171c1f",
+                        "on-secondary-container": "#fffbff", "tertiary": "#250d00", "on-error-container": "#93000a",
+                        "surface-container-highest": "#dfe3e7", "primary": "#00152a", "secondary": "#b6171e",
+                        "error": "#ba1a1a", "inverse-on-surface": "#edf1f5", "surface-container-high": "#e4e9ed",
+                        "on-primary-container": "#7a92b0", "surface-container-lowest": "#ffffff", "primary-fixed-dim": "#b0c9e8",
+                        "on-tertiary-fixed": "#311300", "tertiary-container": "#441e00", "on-error": "#ffffff",
+                        "tertiary-fixed": "#ffdcc6", "secondary-fixed-dim": "#ffb3ac", "secondary-container": "#da3433",
+                        "surface-container": "#eaeef2", "tertiary-fixed-dim": "#ffb786", "on-surface-variant": "#43474d",
+                        "inverse-surface": "#2c3134", "primary-fixed": "#d1e4ff", "on-primary-fixed": "#011d35",
+                        "surface-variant": "#dfe3e7", "on-primary": "#ffffff", "primary-container": "#102a43",
+                        "on-secondary-fixed": "#410003", "outline-variant": "#c3c6ce", "surface-dim": "#d6dade",
+                        "surface-bright": "#f6fafe", "inverse-primary": "#b0c9e8"
+                    },
+                    fontFamily: { "headline": ["Manrope"], "body": ["Inter"], "label": ["Inter"] },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
         }
     </script>
+    <style>
+        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .hover-lift { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease; }
+        .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 21, 42, 0.1), 0 10px 10px -5px rgba(0, 21, 42, 0.04); }
+        body { min-height: max(884px, 100dvh); }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface overflow-x-hidden pt-24">
 
-    {% block scripts %}{% endblock %}
+<header class="fixed top-0 w-full z-50 flex items-center justify-between px-6 py-4 bg-primary shadow-2xl shadow-black/20">
+    <a href="{{ url_for('index') }}" class="flex items-center gap-3 decoration-none">
+        <span class="material-symbols-outlined text-secondary text-2xl" data-icon="shield_with_heart">shield_with_heart</span>
+        <span class="text-xl font-bold tracking-tighter text-white font-headline">SACHET</span>
+    </a>
+    
+    <div class="flex items-center gap-4">
+        {% if session.get('police_logged_in') and not current_user.is_authenticated %}
+            <a href="{{ url_for('police_dashboard') }}" class="text-white hover:text-secondary-fixed text-sm font-bold transition-all">Police Dashboard</a>
+            <a href="{{ url_for('police_logout') }}" class="text-white hover:text-secondary-fixed text-sm font-bold transition-all">Logout</a>
+        {% endif %}
+        {% if current_user.is_authenticated %}
+            <a href="{{ url_for('ml_page') }}" class="text-white hover:text-secondary-fixed text-sm font-bold transition-all">ML</a>
+            <a href="{{ url_for('admin_dashboard') }}" class="text-white hover:text-secondary-fixed text-sm font-bold transition-all">Admin</a>
+            <a href="{{ url_for('admin_logout') }}" class="text-white hover:text-secondary-fixed text-sm font-bold transition-all">Logout</a>
+        {% endif %}
+        <a href="{{ url_for('index') }}" class="bg-secondary hover:bg-secondary-container text-white px-4 py-2 rounded-lg text-xs font-bold font-label tracking-wider uppercase transition-all active:scale-95">
+            HOME
+        </a>
+    </div>
+</header>
+
+<main class="w-full max-w-7xl mx-auto px-4 md:px-8 pb-12">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-4">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded-lg mb-2 {{ 'bg-error text-white' if category == 'error' else 'bg-green-600 text-white' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+</main>
+
+<!-- Footer -->
+<footer class="w-full py-12 px-8 flex flex-col md:flex-row justify-between items-center gap-6 bg-primary border-t border-slate-200/50 mt-12 text-white">
+    <div class="flex flex-col gap-2 items-center md:items-start">
+        <span class="font-manrope font-black text-lg uppercase tracking-tighter">SACHET CHILD ALERT</span>
+        <p class="font-inter text-xs uppercase tracking-widest text-center md:text-left opacity-80">© 2024 Child Alert System.</p>
+    </div>
+    <div class="flex flex-wrap justify-center gap-6">
+        <a class="font-inter text-xs uppercase tracking-widest hover:text-secondary transition-all" href="tel:112">112 - Police</a>
+        <a class="font-inter text-xs uppercase tracking-widest hover:text-secondary transition-all" href="{{ url_for('index') }}">View Cases</a>
+    </div>
+</footer>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Custom JS -->
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+{% block scripts %}{% endblock %}
 </body>
-
 </html>
