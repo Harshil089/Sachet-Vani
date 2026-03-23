@@ -66,8 +66,8 @@ _ML_CACHE_MAX_ENTRIES = 500
 _ML_CACHE_TTL_SECONDS = int(os.environ.get('ML_CACHE_TTL_SECONDS', '86400'))
 _redis_client = None
 # Only Vercel should proxy ML requests to an external ML service.
-# Render is used to host the heavy ML app itself.
-IS_SERVERLESS_ENV = bool(os.environ.get('VERCEL'))
+# If both env flags are present, prefer local mode on Render to avoid recursive proxying.
+IS_SERVERLESS_ENV = bool(os.environ.get('VERCEL')) and not bool(os.environ.get('RENDER'))
 ML_SERVICE_URL = (os.environ.get('ML_SERVICE_URL') or '').strip().rstrip('/')
 ML_SERVICE_TIMEOUT_SECONDS = int(os.environ.get('ML_SERVICE_TIMEOUT_SECONDS', '30'))
 
@@ -2182,6 +2182,10 @@ def not_found_error(error):
 @app.errorhandler(500)
 def internal_error(error):
     db.session.rollback()
+    if request.path.startswith('/api/'):
+        if app.config.get('DEBUG'):
+            return jsonify({'success': False, 'error': 'Internal server error', 'detail': str(error)}), 500
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
     return render_template('errors/500.html'), 500
 
 # Health check endpoint for Render
@@ -2235,6 +2239,8 @@ def ml_page():
 
 @app.route('/api/ml/predict', methods=['POST'])
 def api_ml_predict():
+    payload = request.get_json(silent=True) or {}
+
     if IS_SERVERLESS_ENV:
         if not ML_SERVICE_URL:
             return jsonify({
@@ -2242,7 +2248,6 @@ def api_ml_predict():
                 'error': 'ML service is not configured for this deployment environment'
             }), 503
 
-        payload = request.get_json() or {}
         try:
             response = requests.post(
                 f"{ML_SERVICE_URL}/api/ml/predict",
@@ -2273,7 +2278,6 @@ def api_ml_predict():
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
-    payload = request.get_json() or {}
     try:
         # Lazy import to avoid heavy startup cost if models are not present
         from predictor import predict_initial_case, haversine
@@ -2320,6 +2324,8 @@ def api_ml_predict():
 
 @app.route('/api/ml/refine', methods=['POST'])
 def api_ml_refine():
+    payload = request.get_json(silent=True) or {}
+
     if IS_SERVERLESS_ENV:
         if not ML_SERVICE_URL:
             return jsonify({
@@ -2327,7 +2333,6 @@ def api_ml_refine():
                 'error': 'ML service is not configured for this deployment environment'
             }), 503
 
-        payload = request.get_json() or {}
         try:
             response = requests.post(
                 f"{ML_SERVICE_URL}/api/ml/refine",
@@ -2358,7 +2363,6 @@ def api_ml_refine():
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
-    payload = request.get_json() or {}
     try:
         from predictor import refine_location_with_sightings
     except Exception as e:
