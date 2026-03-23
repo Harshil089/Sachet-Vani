@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, Response, has_request_context
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
@@ -112,7 +112,29 @@ def _ml_cache_key(report_id):
 
 
 def _ml_service_headers():
-    return {'Content-Type': 'application/json'}
+    headers = {'Content-Type': 'application/json'}
+
+    # Compatibility mode: forward incoming auth headers to an upstream ML
+    # service and optionally use configured token envs if provided.
+    upstream_token = _read_env_value('ML_SERVICE_TOKEN', 'RENDER_ML_SERVICE_TOKEN', 'UPSTREAM_ML_TOKEN')
+
+    if has_request_context():
+        incoming_auth = (request.headers.get('Authorization') or '').strip()
+        incoming_token = (request.headers.get('X-ML-Service-Token') or '').strip()
+        incoming_legacy = (request.headers.get('ML_SERVICE_TOKEN') or '').strip()
+
+        if incoming_auth:
+            headers['Authorization'] = incoming_auth
+        if incoming_token:
+            headers['X-ML-Service-Token'] = incoming_token
+        if incoming_legacy and 'X-ML-Service-Token' not in headers:
+            headers['X-ML-Service-Token'] = incoming_legacy
+
+    if upstream_token:
+        headers.setdefault('Authorization', f'Bearer {upstream_token}')
+        headers.setdefault('X-ML-Service-Token', upstream_token)
+
+    return headers
 
 
 def _serialize_case_input_for_json(case_input):
@@ -2228,7 +2250,26 @@ def api_ml_predict():
                 headers=_ml_service_headers(),
                 timeout=ML_SERVICE_TIMEOUT_SECONDS
             )
-            return jsonify(response.json()), response.status_code
+            try:
+                upstream_data = response.json()
+            except Exception:
+                upstream_data = {
+                    'success': False,
+                    'error': f'Upstream ML service returned non-JSON response ({response.status_code})',
+                    'upstream_body': (response.text or '')[:300]
+                }
+
+            if response.status_code == 401:
+                upstream_error = upstream_data.get('error') or 'Unauthorized'
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Upstream ML service rejected request (401): {upstream_error}. '
+                        'If Render still enforces token auth, set ML_SERVICE_TOKEN in Vercel to match or redeploy Render with token auth disabled.'
+                    )
+                }), 502
+
+            return jsonify(upstream_data), response.status_code
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
@@ -2294,7 +2335,26 @@ def api_ml_refine():
                 headers=_ml_service_headers(),
                 timeout=ML_SERVICE_TIMEOUT_SECONDS
             )
-            return jsonify(response.json()), response.status_code
+            try:
+                upstream_data = response.json()
+            except Exception:
+                upstream_data = {
+                    'success': False,
+                    'error': f'Upstream ML service returned non-JSON response ({response.status_code})',
+                    'upstream_body': (response.text or '')[:300]
+                }
+
+            if response.status_code == 401:
+                upstream_error = upstream_data.get('error') or 'Unauthorized'
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Upstream ML service rejected request (401): {upstream_error}. '
+                        'If Render still enforces token auth, set ML_SERVICE_TOKEN in Vercel to match or redeploy Render with token auth disabled.'
+                    )
+                }), 502
+
+            return jsonify(upstream_data), response.status_code
         except Exception as e:
             return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
 
