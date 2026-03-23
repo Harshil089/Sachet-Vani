@@ -106,8 +106,9 @@ This app is ready to deploy on Render or similar cloud platforms.
 1. Connect the repository to Vercel.
 2. Set build/output using the included [vercel.json](vercel.json) and entrypoint [api/index.py](api/index.py).
 3. Add environment variables in Vercel project settings:
-- `DATABASE_URL` (preferred) or one of: `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`
-- If URL vars are not set, the app can also build a connection string from: `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`, optional `POSTGRES_PORT`
+- `POSTGRES_URL` (preferred), or `POSTGRES_PRISMA_URL`, or `POSTGRES_URL_NON_POOLING`
+- Optional URL aliases also supported: `DATABASE_INTERNAL_URL`, `DATABASE_URL`
+- If URL vars are not set, the app can build a connection string from: `POSTGRES_HOST`/`PGHOST`, `POSTGRES_USER`/`PGUSER`, `POSTGRES_PASSWORD`/`PGPASSWORD`, `POSTGRES_DATABASE`/`PGDATABASE`, optional `POSTGRES_PORT`/`PGPORT`
 - `SECRET_KEY`
 - `ADMIN_PASSWORD`
 - `POLICE_PASSWORD`

@@ -54,20 +54,23 @@ class Config:
         SECRET_KEY = 'dev-secret-key-change-in-production'
     
     # Database Configuration - Use persistent storage
+    # Provider-native names first (Supabase/Vercel + Render + generic PG vars).
     DATABASE_URL = _read_env(
-        'DATABASE_URL',
         'POSTGRES_URL',
         'POSTGRES_PRISMA_URL',
         'POSTGRES_URL_NON_POOLING',
+        'DATABASE_INTERNAL_URL',
+        # Backward compatibility only (not required when provider envs exist).
+        'DATABASE_URL',
     )
 
-    # Build URL from Supabase Postgres parts if full URL vars are not present.
+    # Build URL from split Postgres vars if full URL vars are not present.
     if not DATABASE_URL:
-        pg_host = _read_env('POSTGRES_HOST')
-        pg_user = _read_env('POSTGRES_USER')
-        pg_password = _read_env('POSTGRES_PASSWORD')
-        pg_database = _read_env('POSTGRES_DATABASE') or 'postgres'
-        pg_port = _read_env('POSTGRES_PORT') or '5432'
+        pg_host = _read_env('POSTGRES_HOST', 'PGHOST')
+        pg_user = _read_env('POSTGRES_USER', 'PGUSER')
+        pg_password = _read_env('POSTGRES_PASSWORD', 'PGPASSWORD')
+        pg_database = _read_env('POSTGRES_DATABASE', 'PGDATABASE', 'POSTGRES_DB') or 'postgres'
+        pg_port = _read_env('POSTGRES_PORT', 'PGPORT') or '5432'
 
         if pg_host and pg_user and pg_password:
             safe_user = quote_plus(pg_user)
@@ -91,7 +94,7 @@ class Config:
             sqlite_tmp_path = '/tmp/missing_children.db'
             SQLALCHEMY_DATABASE_URI = f'sqlite:///{sqlite_tmp_path}'
             print(
-                "⚠️ DATABASE_URL not set in cloud env; using ephemeral SQLite at /tmp/missing_children.db "
+                "⚠️ No provider Postgres env found in cloud env; using ephemeral SQLite at /tmp/missing_children.db "
                 "(data will reset)."
             )
         else:
