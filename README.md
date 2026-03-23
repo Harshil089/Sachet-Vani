@@ -98,6 +98,25 @@ This app is ready to deploy on Render or similar cloud platforms.
 - Use PostgreSQL for permanent data persistence.
 - Cloudinary setup ensures media files persist securely.
 
+### Vercel + Redis Quick Start
+
+1. Connect the repository to Vercel.
+2. Set build/output using the included [vercel.json](vercel.json) and entrypoint [api/index.py](api/index.py).
+3. Add environment variables in Vercel project settings:
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `ADMIN_PASSWORD`
+- `POLICE_PASSWORD`
+- `CLOUDINARY_URL`
+- `REDIS_URL` (Upstash/Redis instance)
+- `ML_CACHE_TTL_SECONDS` (optional, default `86400`)
+- `VERCEL=1`
+4. Deploy.
+
+Notes:
+- ML cache now uses Redis when `REDIS_URL` is available; local in-memory cache is used as fallback.
+- This keeps case-level ML predictions reusable across serverless invocations and instances.
+
 ---
 
 ## Folder Structure

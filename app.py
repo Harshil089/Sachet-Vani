@@ -10,8 +10,12 @@ import requests
 from PIL import Image
 import json
 import math
+import hashlib
+import copy
 from collections import defaultdict, Counter
 import statistics
+from sqlalchemy import inspect
+from sqlalchemy.orm import selectinload
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -19,6 +23,10 @@ from cloudinary.utils import cloudinary_url
 import threading
 import time
 from functools import lru_cache
+try:
+    import redis
+except Exception:
+    redis = None
 
 from config import Config
 
@@ -52,6 +60,37 @@ login_manager.login_view = 'admin_login'
 
 # In-memory tracking for failed admin login attempts and lockouts
 FAILED_ADMIN_LOGINS = {}
+ML_CASE_CACHE = {}
+_ml_case_cache_lock = threading.Lock()
+_ML_CACHE_MAX_ENTRIES = 500
+_ML_CACHE_TTL_SECONDS = int(os.environ.get('ML_CACHE_TTL_SECONDS', '86400'))
+_redis_client = None
+
+
+def _get_redis_client():
+    """Create and memoize Redis client for shared cache (optional)."""
+    global _redis_client
+
+    if _redis_client is not None:
+        return _redis_client
+
+    redis_url = os.environ.get('REDIS_URL')
+    if not redis_url or redis is None:
+        return None
+
+    try:
+        _redis_client = redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+        _redis_client.ping()
+        print("✅ Redis cache connected")
+        return _redis_client
+    except Exception as e:
+        print(f"⚠️ Redis unavailable, using local cache fallback: {e}")
+        _redis_client = None
+        return None
+
+
+def _ml_cache_key(report_id):
+    return f"ml_case_cache:{report_id}"
 
 def _get_client_ip():
     try:
@@ -198,6 +237,23 @@ def build_area_number_mapping():
 
 AREA_TO_NUMBER = build_area_number_mapping()
 
+LOCATION_TYPE_KEYWORDS = [
+    ('Parks/Playgrounds', ('park', 'playground')),
+    ('Educational', ('school', 'university')),
+    ('Commercial', ('mall', 'store', 'shop')),
+    ('Residential', ('home', 'house', 'residence')),
+]
+
+RISK_ZONE_RADIUS_KM = 2.0
+RISK_ZONE_BUCKET_DEG = 0.02
+
+CITY_CENTERS = {
+    'Mumbai': (19.0761, 72.8775),
+    'Pune': (18.5203, 73.8567),
+    'Nagpur': (21.1497, 79.0806),
+    'Nashik': (19.9975, 73.7898),
+}
+
 def select_numbers_for_location(location_text):
     """Return a list of phone numbers to alert based on free-text location.
 
@@ -230,6 +286,277 @@ def select_numbers_for_location(location_text):
             filtered.append(n)
 
     return filtered if filtered else DEMO_PHONE_NUMBERS
+
+
+def _build_case_input_from_child(missing_child, haversine_fn=None):
+    case_input = {
+        'child_age': missing_child.age or 0,
+        'child_gender': missing_child.gender or 'M',
+        'latitude': missing_child.last_seen_lat or 0,
+        'longitude': missing_child.last_seen_lng or 0,
+        'abduction_time': missing_child.abduction_time if missing_child.abduction_time is not None else 12.0,
+        'abductor_relation': missing_child.abductor_relation or 'stranger',
+        'region_type': missing_child.region_type or 'Urban',
+        'population_density': missing_child.population_density or 5000,
+        'missing_date': missing_child.missing_date,
+    }
+
+    try:
+        lat = float(case_input.get('latitude', 0))
+        lon = float(case_input.get('longitude', 0))
+        if haversine_fn and CITY_CENTERS:
+            case_input['dist_to_nearest_city'] = min(
+                [haversine_fn(lat, lon, c_lat, c_lon) for c_lat, c_lon in CITY_CENTERS.values()]
+            )
+        else:
+            case_input['dist_to_nearest_city'] = 0
+    except Exception:
+        case_input['dist_to_nearest_city'] = 0
+
+    return case_input
+
+
+def _build_sighting_dicts(sightings):
+    sighting_dicts = []
+    for s in sightings:
+        sighting_dicts.append({
+            'lat': s.latitude or 0,
+            'lon': s.longitude or 0,
+            'hours_since': (datetime.utcnow() - s.sighting_time).total_seconds() / 3600,
+            'direction_text': s.description or ''
+        })
+    return sighting_dicts
+
+
+def _build_ml_cache_signature(missing_child, sightings):
+    """Build a deterministic signature for ML inputs per case for cache reuse."""
+    child_payload = {
+        'report_id': missing_child.report_id,
+        'age': missing_child.age,
+        'gender': missing_child.gender,
+        'last_seen_lat': missing_child.last_seen_lat,
+        'last_seen_lng': missing_child.last_seen_lng,
+        'abduction_time': missing_child.abduction_time,
+        'abductor_relation': missing_child.abductor_relation,
+        'region_type': missing_child.region_type,
+        'population_density': missing_child.population_density,
+        'missing_date': missing_child.missing_date.isoformat() if missing_child.missing_date else None,
+    }
+
+    sightings_payload = []
+    for s in sightings:
+        sightings_payload.append({
+            'id': s.id,
+            'lat': s.latitude,
+            'lon': s.longitude,
+            'description': s.description,
+            'sighting_time': s.sighting_time.isoformat() if s.sighting_time else None,
+        })
+
+    payload = {
+        'ml_logic_version': 2,
+        'child': child_payload,
+        'sightings': sightings_payload,
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str).encode('utf-8')
+    return hashlib.sha1(raw).hexdigest()
+
+
+def _evict_one_ml_cache_entry_if_needed():
+    if len(ML_CASE_CACHE) < _ML_CACHE_MAX_ENTRIES:
+        return
+    oldest_key = min(ML_CASE_CACHE, key=lambda k: ML_CASE_CACHE[k].get('cached_at', 0))
+    ML_CASE_CACHE.pop(oldest_key, None)
+
+
+def _invalidate_case_ml_cache(report_id):
+    if not report_id:
+        return
+
+    redis_client = _get_redis_client()
+    if redis_client:
+        try:
+            redis_client.delete(_ml_cache_key(report_id))
+        except Exception as e:
+            print(f"⚠️ Redis cache delete failed for {report_id}: {e}")
+
+    with _ml_case_cache_lock:
+        ML_CASE_CACHE.pop(report_id, None)
+
+
+def _get_cached_ml_outputs(report_id, signature):
+    redis_client = _get_redis_client()
+    if redis_client:
+        try:
+            raw = redis_client.get(_ml_cache_key(report_id))
+            if raw:
+                entry = json.loads(raw)
+                if entry.get('signature') == signature:
+                    return (
+                        entry.get('ml_prediction'),
+                        entry.get('ml_refined'),
+                        entry.get('ml_status'),
+                    )
+        except Exception as e:
+            print(f"⚠️ Redis cache read failed for {report_id}: {e}")
+
+    with _ml_case_cache_lock:
+        entry = ML_CASE_CACHE.get(report_id)
+        if not entry:
+            return None
+        if entry.get('signature') != signature:
+            return None
+        return (
+            copy.deepcopy(entry.get('ml_prediction')),
+            copy.deepcopy(entry.get('ml_refined')),
+            copy.deepcopy(entry.get('ml_status')),
+        )
+
+
+def _store_cached_ml_outputs(report_id, signature, ml_prediction, ml_refined, ml_status):
+    entry_payload = {
+        'signature': signature,
+        'ml_prediction': copy.deepcopy(ml_prediction),
+        'ml_refined': copy.deepcopy(ml_refined),
+        'ml_status': copy.deepcopy(ml_status),
+        'cached_at': time.time(),
+    }
+
+    redis_client = _get_redis_client()
+    if redis_client:
+        try:
+            redis_client.setex(
+                _ml_cache_key(report_id),
+                _ML_CACHE_TTL_SECONDS,
+                json.dumps(entry_payload, default=str)
+            )
+        except Exception as e:
+            print(f"⚠️ Redis cache write failed for {report_id}: {e}")
+
+    with _ml_case_cache_lock:
+        _evict_one_ml_cache_entry_if_needed()
+        ML_CASE_CACHE[report_id] = entry_payload
+
+
+def _build_known_location_candidates(missing_child, sightings):
+    """Collect known labeled map points from case and sightings for fallback naming."""
+    candidates = []
+
+    if missing_child and missing_child.last_seen_lat is not None and missing_child.last_seen_lng is not None:
+        label = (missing_child.last_seen_location or '').strip() or 'Last Seen Location'
+        candidates.append((float(missing_child.last_seen_lat), float(missing_child.last_seen_lng), label))
+
+    for s in sightings or []:
+        if s.latitude is None or s.longitude is None:
+            continue
+        label = (s.location or '').strip()
+        if not label:
+            continue
+        candidates.append((float(s.latitude), float(s.longitude), label))
+
+    return candidates
+
+
+def _nearest_known_location_label(lat, lng, candidates):
+    """Return a nearest labeled place string like 'Near <name> (~x km)' if possible."""
+    if lat is None or lng is None or not candidates:
+        return None
+
+    nearest = None
+    for c_lat, c_lng, c_label in candidates:
+        try:
+            dist_km = calculate_distance(float(lat), float(lng), float(c_lat), float(c_lng))
+            if nearest is None or dist_km < nearest[0]:
+                nearest = (dist_km, c_label)
+        except Exception:
+            continue
+
+    if not nearest:
+        return None
+
+    dist_km, label = nearest
+    return f"Near {label} (~{dist_km:.1f} km)"
+
+
+def _attach_location_names_to_ml_outputs(ml_prediction, ml_refined, missing_child=None, sightings=None):
+    """Attach human-readable location names to ML outputs for UI summary/popups."""
+    fallback_candidates = _build_known_location_candidates(missing_child, sightings)
+
+    if ml_prediction and ml_prediction.get('predicted_latitude') is not None and ml_prediction.get('predicted_longitude') is not None:
+        predicted_name = get_location_name_from_coordinates(
+            ml_prediction.get('predicted_latitude'),
+            ml_prediction.get('predicted_longitude')
+        )
+        if not predicted_name:
+            predicted_name = _nearest_known_location_label(
+                ml_prediction.get('predicted_latitude'),
+                ml_prediction.get('predicted_longitude'),
+                fallback_candidates
+            )
+        if predicted_name:
+            ml_prediction['predicted_location_name'] = predicted_name
+
+    if ml_refined and ml_refined.get('lat') is not None and ml_refined.get('lon') is not None:
+        refined_name = get_location_name_from_coordinates(ml_refined.get('lat'), ml_refined.get('lon'))
+        if not refined_name:
+            refined_name = _nearest_known_location_label(
+                ml_refined.get('lat'),
+                ml_refined.get('lon'),
+                fallback_candidates
+            )
+        if refined_name:
+            ml_refined['location_name'] = refined_name
+
+    return ml_prediction, ml_refined
+
+
+def _compute_case_ml_outputs(missing_child, sightings, context_label='case', use_cache=True, force_refresh=False):
+    ml_prediction = None
+    ml_refined = None
+    ml_status = {'available': False, 'message': ''}
+
+    if os.environ.get('RENDER'):
+        msg = f"ML skipped on Render for {context_label} {missing_child.report_id} (memory constraints)"
+        print(msg)
+        ml_status['message'] = 'ML is unavailable in this deployment environment.'
+        return ml_prediction, ml_refined, ml_status
+
+    cache_signature = _build_ml_cache_signature(missing_child, sightings)
+    if use_cache and not force_refresh:
+        cached = _get_cached_ml_outputs(missing_child.report_id, cache_signature)
+        if cached:
+            cached_prediction, cached_refined, cached_status = cached
+            if isinstance(cached_status, dict):
+                cached_status['from_cache'] = True
+            return cached_prediction, cached_refined, cached_status
+
+    try:
+        from predictor import predict_initial_case, refine_location_with_sightings, haversine
+
+        case_input = _build_case_input_from_child(missing_child, haversine_fn=haversine)
+        sighting_dicts = _build_sighting_dicts(sightings)
+
+        ml_prediction = predict_initial_case(case_input)
+        if sighting_dicts:
+            rlat, rlon = refine_location_with_sightings(ml_prediction, sighting_dicts, case_input)
+            ml_refined = {'lat': rlat, 'lon': rlon}
+
+        ml_prediction, ml_refined = _attach_location_names_to_ml_outputs(
+            ml_prediction,
+            ml_refined,
+            missing_child=missing_child,
+            sightings=sightings
+        )
+
+        ml_status['available'] = True
+        ml_status['from_cache'] = False
+        if use_cache and missing_child.report_id:
+            _store_cached_ml_outputs(missing_child.report_id, cache_signature, ml_prediction, ml_refined, ml_status)
+        return ml_prediction, ml_refined, ml_status
+    except Exception as e:
+        print(f"ML integration skipped for {context_label} {missing_child.report_id}: {e}")
+        ml_status['message'] = str(e)
+        return ml_prediction, ml_refined, ml_status
 
 # Telegram Bot directly
 import requests
@@ -537,6 +864,87 @@ def get_location_coordinates(location_name):
     # Fallback to Nominatim (free but rate-limited)
     return _geocode_with_nominatim(location_name)
 
+
+def _reverse_geocode_with_google_maps(lat, lng):
+    """Reverse geocode coordinates with Google Maps API if configured."""
+    google_api_key = app.config.get('GOOGLE_MAPS_API_KEY') or os.environ.get('GOOGLE_MAPS_API_KEY')
+    if not google_api_key:
+        return None
+
+    try:
+        url = "https://maps.googleapis.com/maps/api/geocode/json"
+        params = {
+            'latlng': f'{lat},{lng}',
+            'key': google_api_key
+        }
+        response = requests.get(url, params=params, timeout=8)
+        response.raise_for_status()
+        data = response.json()
+        if data.get('status') == 'OK' and data.get('results'):
+            return data['results'][0].get('formatted_address')
+    except Exception as e:
+        print(f"❌ Google reverse geocoding error for ({lat}, {lng}): {str(e)}")
+    return None
+
+
+def _reverse_geocode_with_nominatim(lat, lng):
+    """Reverse geocode coordinates with Nominatim (rate limited)."""
+    global _last_geocode_request
+
+    try:
+        with _geocode_lock:
+            time_since_last = time.time() - _last_geocode_request
+            if time_since_last < 1.0:
+                time.sleep(1.0 - time_since_last)
+            _last_geocode_request = time.time()
+
+        url = (
+            "https://nominatim.openstreetmap.org/reverse"
+            f"?format=jsonv2&lat={lat}&lon={lng}&zoom=16&addressdetails=1"
+        )
+        headers = {
+            'User-Agent': 'Sachet-ChildSafety/1.0 (https://sachet.onrender.com)'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get('display_name')
+    except requests.exceptions.Timeout:
+        print(f"❌ Nominatim reverse geocoding timeout for ({lat}, {lng})")
+    except Exception as e:
+        print(f"❌ Nominatim reverse geocoding error for ({lat}, {lng}): {str(e)}")
+    return None
+
+
+@lru_cache(maxsize=512)
+def _reverse_geocode_cached(lat_key, lng_key):
+    """Cached reverse geocoding by normalized coordinate keys."""
+    try:
+        lat = float(lat_key)
+        lng = float(lng_key)
+    except Exception:
+        return None
+
+    location_name = _reverse_geocode_with_google_maps(lat, lng)
+    if location_name:
+        return location_name
+
+    return _reverse_geocode_with_nominatim(lat, lng)
+
+
+def get_location_name_from_coordinates(lat, lng):
+    """Resolve coordinates to a location name using cached reverse geocoding."""
+    if lat is None or lng is None:
+        return None
+
+    try:
+        lat_key = f"{float(lat):.5f}"
+        lng_key = f"{float(lng):.5f}"
+    except Exception:
+        return None
+
+    return _reverse_geocode_cached(lat_key, lng_key)
+
 def send_sms_alert(message):
     """Fallback function name for existing code, routes to Telegram"""
     return send_telegram_broadcast(message)
@@ -581,6 +989,10 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     
     return R * c
 
+
+def _risk_bucket(lat, lng):
+    return (math.floor(lat / RISK_ZONE_BUCKET_DEG), math.floor(lng / RISK_ZONE_BUCKET_DEG))
+
 def analyze_risk_zones():
     """Analyze historical data to identify high-risk zones"""
     cases = MissingChild.query.filter(
@@ -593,24 +1005,38 @@ def analyze_risk_zones():
     
     zones = []
     processed = set()
-    
+
+    buckets = defaultdict(list)
+    for idx, case in enumerate(cases):
+        buckets[_risk_bucket(case.last_seen_lat, case.last_seen_lng)].append(idx)
+
     for i, case in enumerate(cases):
         if i in processed:
             continue
             
         zone_cases = [case]
         processed.add(i)
-        
-        for j, other_case in enumerate(cases[i+1:], i+1):
+
+        base_bucket = _risk_bucket(case.last_seen_lat, case.last_seen_lng)
+        candidate_indices = []
+        for d_lat in (-1, 0, 1):
+            for d_lng in (-1, 0, 1):
+                candidate_indices.extend(buckets.get((base_bucket[0] + d_lat, base_bucket[1] + d_lng), []))
+
+        for j in candidate_indices:
+            if j <= i:
+                continue
             if j in processed:
                 continue
+
+            other_case = cases[j]
                 
             distance = calculate_distance(
                 case.last_seen_lat, case.last_seen_lng,
                 other_case.last_seen_lat, other_case.last_seen_lng
             )
             
-            if distance <= 2.0:
+            if distance <= RISK_ZONE_RADIUS_KM:
                 zone_cases.append(other_case)
                 processed.add(j)
         
@@ -640,7 +1066,7 @@ def analyze_risk_zones():
             longitude=zone['lng'],
             risk_score=zone['risk_score'],
             incident_count=zone['incident_count'],
-            radius_km=2.0
+            radius_km=RISK_ZONE_RADIUS_KM
         )
         db.session.add(risk_zone)
     
@@ -655,33 +1081,32 @@ def calculate_risk_score(cases):
     incident_score = min(len(cases) * 10, 50)
     
     now = datetime.utcnow()
-    recency_scores = []
-    
+    recency_total = 0
+    age_total = 0
+
     for case in cases:
         days_ago = (now - case.date_reported).days
         if days_ago <= 30:
-            recency_scores.append(20)
+            recency_total += 20
         elif days_ago <= 90:
-            recency_scores.append(15)
+            recency_total += 15
         elif days_ago <= 365:
-            recency_scores.append(10)
+            recency_total += 10
         else:
-            recency_scores.append(5)
-    
-    recency_score = sum(recency_scores) / len(recency_scores) if recency_scores else 0
-    
-    age_scores = []
-    for case in cases:
-        if case.age <= 5:
-            age_scores.append(15)
-        elif case.age <= 10:
-            age_scores.append(12)
-        elif case.age <= 15:
-            age_scores.append(8)
+            recency_total += 5
+
+        age = case.age or 0
+        if age <= 5:
+            age_total += 15
+        elif age <= 10:
+            age_total += 12
+        elif age <= 15:
+            age_total += 8
         else:
-            age_scores.append(5)
-    
-    age_score = sum(age_scores) / len(age_scores) if age_scores else 0
+            age_total += 5
+
+    recency_score = recency_total / len(cases)
+    age_score = age_total / len(cases)
     
     total_score = incident_score + recency_score + age_score
     return min(total_score, 100)
@@ -700,16 +1125,15 @@ def analyze_demographic_patterns():
         'location_types': Counter(),
         'recovery_rates': {}
     }
+
+    found_cases_count = 0
+    age_totals = Counter()
+    age_found = Counter()
     
     for case in cases:
-        if case.age <= 5:
-            patterns['age_groups']['0-5 years'] += 1
-        elif case.age <= 10:
-            patterns['age_groups']['6-10 years'] += 1
-        elif case.age <= 15:
-            patterns['age_groups']['11-15 years'] += 1
-        else:
-            patterns['age_groups']['16+ years'] += 1
+        age_group = get_age_group(case.age or 0)
+        patterns['age_groups'][age_group] += 1
+        age_totals[age_group] += 1
         
         patterns['gender_distribution'][case.gender] += 1
         
@@ -723,32 +1147,28 @@ def analyze_demographic_patterns():
         else:
             patterns['time_patterns']['Night (0-6)'] += 1
         
-        location = case.last_seen_location.lower()
-        if any(word in location for word in ['park', 'playground']):
-            patterns['location_types']['Parks/Playgrounds'] += 1
-        elif any(word in location for word in ['school', 'university']):
-            patterns['location_types']['Educational'] += 1
-        elif any(word in location for word in ['mall', 'store', 'shop']):
-            patterns['location_types']['Commercial'] += 1
-        elif any(word in location for word in ['home', 'house', 'residence']):
-            patterns['location_types']['Residential'] += 1
-        else:
+        location = (case.last_seen_location or '').lower()
+        classified = False
+        for label, keywords in LOCATION_TYPE_KEYWORDS:
+            if any(word in location for word in keywords):
+                patterns['location_types'][label] += 1
+                classified = True
+                break
+        if not classified:
             patterns['location_types']['Other'] += 1
-    
-    found_cases = [c for c in cases if c.status == 'found']
+
+        if case.status == 'found':
+            found_cases_count += 1
+            age_found[age_group] += 1
+
     total_cases = len(cases)
     
     if total_cases > 0:
-        patterns['recovery_rates']['overall'] = (len(found_cases) / total_cases) * 100
-        
-        age_recovery = {}
-        for age_group in patterns['age_groups']:
-            age_cases = [c for c in cases if get_age_group(c.age) == age_group]
-            age_found = [c for c in age_cases if c.status == 'found']
-            if age_cases:
-                age_recovery[age_group] = (len(age_found) / len(age_cases)) * 100
-        
-        patterns['recovery_rates']['by_age'] = age_recovery
+        patterns['recovery_rates']['overall'] = (found_cases_count / total_cases) * 100
+        patterns['recovery_rates']['by_age'] = {
+            age_group: (age_found[age_group] / count) * 100
+            for age_group, count in age_totals.items() if count
+        }
     
     return patterns
 
@@ -855,6 +1275,7 @@ def delete_case(report_id):
         # Delete the missing child record
         db.session.delete(missing_child)
         db.session.commit()
+        _invalidate_case_ml_cache(report_id)
         
         # No broadcast on delete per requirements
         
@@ -882,6 +1303,7 @@ def delete_sighting(sighting_id):
             
     db.session.delete(sighting)
     db.session.commit()
+    _invalidate_case_ml_cache(report_id)
     
     # Update risk zones
     try:
@@ -905,35 +1327,41 @@ def bulk_delete_cases():
         
         deleted_count = 0
         deleted_names = []
-        
+
+        selected_cases = MissingChild.query.filter(MissingChild.report_id.in_(case_ids)).all()
+        cases_by_report = {case.report_id: case for case in selected_cases}
+        report_ids_to_delete = list(cases_by_report.keys())
+
+        if report_ids_to_delete:
+            Sighting.query.filter(Sighting.report_id.in_(report_ids_to_delete)).delete(synchronize_session=False)
+
         for report_id in case_ids:
-            missing_child = MissingChild.query.filter_by(report_id=report_id).first()
-            if missing_child:
-                deleted_names.append(missing_child.name)
-                
-                # Delete associated sightings
-                sightings = Sighting.query.filter_by(report_id=report_id).all()
-                for sighting in sightings:
-                    db.session.delete(sighting)
-                
-                # Delete files (same logic as single delete)
-                if CLOUDINARY_ENABLED:
-                    try:
-                        if missing_child.photo_filename and missing_child.photo_filename.startswith('http'):
-                            photo_public_id = f"missing_children/photos/{report_id}_photo"
-                            cloudinary.uploader.destroy(photo_public_id)
-                        
-                        if missing_child.audio_filename and missing_child.audio_filename.startswith('http'):
-                            audio_public_id = f"missing_children/audio/{report_id}_audio"
-                            cloudinary.uploader.destroy(audio_public_id, resource_type="video")
-                    except:
-                        pass
-                
-                # Delete the record
-                db.session.delete(missing_child)
-                deleted_count += 1
+            missing_child = cases_by_report.get(report_id)
+            if not missing_child:
+                continue
+
+            deleted_names.append(missing_child.name)
+
+            # Delete files (same logic as single delete)
+            if CLOUDINARY_ENABLED:
+                try:
+                    if missing_child.photo_filename and missing_child.photo_filename.startswith('http'):
+                        photo_public_id = f"missing_children/photos/{report_id}_photo"
+                        cloudinary.uploader.destroy(photo_public_id)
+
+                    if missing_child.audio_filename and missing_child.audio_filename.startswith('http'):
+                        audio_public_id = f"missing_children/audio/{report_id}_audio"
+                        cloudinary.uploader.destroy(audio_public_id, resource_type="video")
+                except Exception:
+                    pass
+
+            # Delete the record
+            db.session.delete(missing_child)
+            deleted_count += 1
         
         db.session.commit()
+        for rid in report_ids_to_delete:
+            _invalidate_case_ml_cache(rid)
         
         # No broadcast on bulk delete per requirements
         
@@ -1049,6 +1477,10 @@ def report_missing():
                     else:
                         flash('Audio upload failed, but report was created successfully', 'warning')
         
+        # Get ML features from report form
+        region_type_val = request.form.get('region_type', 'Urban')
+        abductor_relation_val = request.form.get('abductor_relation', 'stranger')
+        
         # Create missing child record with URLs instead of filenames
         missing_child = MissingChild(
             report_id=report_id,
@@ -1059,6 +1491,8 @@ def report_missing():
             location_subcategory=location_subcategory,
             abduction_time=abduction_time_val,
             missing_date=missing_date_val,
+            region_type=region_type_val,
+            abductor_relation=abductor_relation_val,
             last_seen_lat=lat,
             last_seen_lng=lng,
             description=description,
@@ -1185,6 +1619,7 @@ def report_found(report_id):
         
         db.session.add(sighting)
         db.session.commit()
+        _invalidate_case_ml_cache(report_id)
         
         # Face comparison (if both photos exist)
         if sighting_photo_url and missing_child.photo_filename:
@@ -1240,7 +1675,12 @@ def report_found(report_id):
 def case_detail(report_id):
     missing_child = MissingChild.query.filter_by(report_id=report_id).first_or_404()
     sightings = Sighting.query.filter_by(report_id=report_id).order_by(Sighting.sighting_time.asc()).all()
-    return render_template('case_detail.html', child=missing_child, sightings=sightings)
+
+    ml_prediction, ml_refined, ml_status = _compute_case_ml_outputs(missing_child, sightings, context_label='public case')
+
+    return render_template('case_detail.html', child=missing_child, sightings=sightings,
+                         ml_prediction=ml_prediction, ml_refined=ml_refined,
+                         ml_status=ml_status)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -1312,6 +1752,7 @@ def update_ml_features(report_id):
         child.population_density = int(request.form.get('population_density', 5000))
         
         db.session.commit()
+        _invalidate_case_ml_cache(report_id)
         flash('ML features updated successfully. Prediction re-calculated.', 'success')
     except Exception as e:
         db.session.rollback()
@@ -1332,61 +1773,7 @@ def admin_case_detail(report_id):
             intensity = max(0.1, 1.0 - (hours_ago / 168))
             heat_data.append([sighting.latitude, sighting.longitude, intensity])
 
-    # Attempt to run ML prediction automatically using stored case and sightings
-    # DISABLED ON RENDER: ML models require too much memory for free tier
-    ml_prediction = None
-    ml_refined = None
-    
-    # Skip ML on Render free tier (causes worker timeout/memory issues)
-    if not os.environ.get('RENDER'):
-        try:
-            # Lazy import so admin pages still load if models are missing
-            from predictor import predict_initial_case, refine_location_with_sightings, haversine
-
-            # Build initial case input from stored fields (best-effort)
-            case_input = {
-                'child_age': missing_child.age or 0,
-                'child_gender': missing_child.gender or 'M',
-                'latitude': missing_child.last_seen_lat or 0,
-                'longitude': missing_child.last_seen_lng or 0,
-                # Use stored ML features
-                'abduction_time': missing_child.abduction_time if missing_child.abduction_time is not None else 12.0,
-                'abductor_relation': missing_child.abductor_relation or 'stranger',
-                'region_type': missing_child.region_type or 'Urban',
-                'population_density': missing_child.population_density or 5000,
-                'missing_date': missing_child.missing_date,
-            }
-
-            # Compute dist_to_nearest_city similar to other code paths
-            CITY_CENTERS = {'Mumbai':(19.0761,72.8775),'Pune':(18.5203,73.8567),'Nagpur':(21.1497,79.0806),'Nashik':(19.9975,73.7898)}
-            try:
-                lat = float(case_input.get('latitude', 0))
-                lon = float(case_input.get('longitude', 0))
-                case_input['dist_to_nearest_city'] = min([haversine(lat, lon, c_lat, c_lon) for c_lat, c_lon in CITY_CENTERS.values()]) if CITY_CENTERS else 0
-            except Exception:
-                case_input['dist_to_nearest_city'] = 0
-
-            # Prepare sightings list expected by predictor.refine_location_with_sightings
-            sighting_dicts = []
-            for s in sightings:
-                sighting_dicts.append({
-                    'lat': s.latitude or 0,
-                    'lon': s.longitude or 0,
-                    'hours_since': (datetime.utcnow() - s.sighting_time).total_seconds() / 3600,
-                    'direction_text': s.description or ''
-                })
-
-            # Call model
-            ml_prediction = predict_initial_case(case_input)
-            # Only attempt refinement if there are sighting reports
-            if sighting_dicts:
-                rlat, rlon = refine_location_with_sightings(ml_prediction, sighting_dicts, case_input)
-                ml_refined = {'lat': rlat, 'lon': rlon}
-        except Exception as e:
-            # Don't raise for admin view; log and continue without ML
-            print(f"ML integration skipped for case {report_id}: {e}")
-    else:
-        print(f"ML skipped on Render for case {report_id} (memory constraints)")
+    ml_prediction, ml_refined, ml_status = _compute_case_ml_outputs(missing_child, sightings, context_label='admin case')
 
     # Fetch active risk zones for the map
     risk_zones = [z.to_dict() for z in RiskZone.query.filter_by(is_active=True).all()]
@@ -1397,6 +1784,7 @@ def admin_case_detail(report_id):
                          heat_data=json.dumps(heat_data),
                          ml_prediction=ml_prediction,
                          ml_refined=ml_refined,
+                         ml_status=ml_status,
                          risk_zones=risk_zones)
 
 @app.route('/admin/update_status/<report_id>/<status>')
@@ -1482,16 +1870,21 @@ def police_dashboard():
         flash('Please login to access the Police Portal', 'warning')
         return redirect(url_for('police_login'))
     
-    cases = MissingChild.query.order_by(MissingChild.date_reported.desc()).all()
+    cases = MissingChild.query.options(selectinload(MissingChild.sightings)).order_by(MissingChild.date_reported.desc()).all()
     
-    # Calculate stats
-    active_cases = len([c for c in cases if c.status == 'missing'])
-    resolved_cases = len([c for c in cases if c.status in ['found', 'closed']])
-    total_sightings = sum(len(c.sightings) for c in cases)
-    
-    # Count high face match sightings
+    # Calculate stats in one pass
+    active_cases = 0
+    resolved_cases = 0
+    total_sightings = 0
     high_match_sightings = 0
+
     for case in cases:
+        if case.status == 'missing':
+            active_cases += 1
+        elif case.status in ['found', 'closed']:
+            resolved_cases += 1
+
+        total_sightings += len(case.sightings)
         for sighting in case.sightings:
             if sighting.face_match_score and sighting.face_match_score >= 70:
                 high_match_sightings += 1
@@ -1507,7 +1900,7 @@ def police_dashboard():
 
 @app.route('/police/case/<report_id>')
 def police_case_detail(report_id):
-    """Police case detail with face match"""
+    """Police case detail with face match and ML predictions"""
     # Prevent admin from accessing police portal (role separation)
     if current_user.is_authenticated:
         flash('Admin users should use the Admin Dashboard', 'info')
@@ -1519,8 +1912,25 @@ def police_case_detail(report_id):
     
     child = MissingChild.query.filter_by(report_id=report_id).first_or_404()
     sightings = Sighting.query.filter_by(report_id=report_id).order_by(Sighting.sighting_time.asc()).all()
-    
-    return render_template('police/case_detail.html', child=child, sightings=sightings)
+
+    # Heat data for sightings
+    heat_data = []
+    for sighting in sightings:
+        if sighting.latitude and sighting.longitude:
+            hours_ago = (datetime.utcnow() - sighting.sighting_time).total_seconds() / 3600
+            intensity = max(0.1, 1.0 - (hours_ago / 168))
+            heat_data.append([sighting.latitude, sighting.longitude, intensity])
+
+    ml_prediction, ml_refined, ml_status = _compute_case_ml_outputs(child, sightings, context_label='police case')
+
+    # Fetch active risk zones for the map
+    risk_zones = [z.to_dict() for z in RiskZone.query.filter_by(is_active=True).all()]
+
+    return render_template('police/case_detail.html', child=child, sightings=sightings,
+                         heat_data=json.dumps(heat_data),
+                         ml_prediction=ml_prediction, ml_refined=ml_refined,
+                         ml_status=ml_status,
+                         risk_zones=risk_zones)
 
 @app.route('/police/logout')
 def police_logout():
@@ -1748,6 +2158,36 @@ def api_ml_refine():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/case/<report_id>/ml/rerun', methods=['POST'])
+def api_case_ml_rerun(report_id):
+    missing_child = MissingChild.query.filter_by(report_id=report_id).first_or_404()
+    sightings = Sighting.query.filter_by(report_id=report_id).order_by(Sighting.sighting_time.asc()).all()
+
+    ml_prediction, ml_refined, ml_status = _compute_case_ml_outputs(
+        missing_child,
+        sightings,
+        context_label='case rerun',
+        use_cache=True,
+        force_refresh=True
+    )
+
+    if not ml_status.get('available'):
+        return jsonify({
+            'success': False,
+            'error': ml_status.get('message') or 'ML unavailable',
+            'ml_status': ml_status,
+            'ml_prediction': ml_prediction,
+            'ml_refined': ml_refined,
+        }), 503
+
+    return jsonify({
+        'success': True,
+        'ml_status': ml_status,
+        'ml_prediction': ml_prediction,
+        'ml_refined': ml_refined,
+    })
+
 # ... (keep everything above as is until the create_tables function)
 
 # Initialize database
@@ -1767,14 +2207,12 @@ def create_tables():
             # Check for missing columns and add them
             try:
                 with db.engine.connect() as connection:
+                    inspector = inspect(db.engine)
+                    missing_child_columns = {col['name'] for col in inspector.get_columns('missing_child')}
+                    sighting_columns = {col['name'] for col in inspector.get_columns('sighting')}
+
                     # Check if emergency_contact column exists
-                    result = connection.execute(db.text("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name='missing_child' AND column_name='emergency_contact'
-                    """))
-                    
-                    if not result.fetchone():
+                    if 'emergency_contact' not in missing_child_columns:
                         print("🔄 Adding emergency_contact column to missing_child table...")
                         connection.execute(db.text("""
                             ALTER TABLE missing_child 
@@ -1786,12 +2224,7 @@ def create_tables():
                         print("✅ emergency_contact column already exists")
 
                     # Check if photo_filename exists on sighting
-                    result2 = connection.execute(db.text("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name='sighting' AND column_name='photo_filename'
-                    """))
-                    if not result2.fetchone():
+                    if 'photo_filename' not in sighting_columns:
                         print("🔄 Adding photo_filename column to sighting table...")
                         connection.execute(db.text("""
                             ALTER TABLE sighting 
@@ -1803,12 +2236,7 @@ def create_tables():
                         print("✅ photo_filename column already exists on sighting")
                     
                     # Check if location_subcategory exists on missing_child
-                    result3 = connection.execute(db.text("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name='missing_child' AND column_name='location_subcategory'
-                    """))
-                    if not result3.fetchone():
+                    if 'location_subcategory' not in missing_child_columns:
                         print("🔄 Adding location_subcategory column to missing_child table...")
                         connection.execute(db.text("""
                             ALTER TABLE missing_child 

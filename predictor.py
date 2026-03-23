@@ -178,6 +178,53 @@ def predict_initial_case(inp: dict):
 
     return {'risk_label':risk_label,'risk_prob':risk_prob,'recovered_label':rec_label,'recovered_prob':rec_prob,'recovery_time_hours':est_recovery_time,'predicted_latitude':pred_lat,'predicted_longitude':pred_lon}
 
+
+def _interpolate_towards(anchor_lat, anchor_lon, target_lat, target_lon, max_distance_km):
+    """Move from anchor towards target so distance from anchor stays within max_distance_km."""
+    distance = float(haversine(anchor_lat, anchor_lon, target_lat, target_lon))
+    if distance <= max_distance_km or distance == 0:
+        return float(target_lat), float(target_lon)
+
+    ratio = max_distance_km / distance
+    clamped_lat = anchor_lat + (target_lat - anchor_lat) * ratio
+    clamped_lon = anchor_lon + (target_lon - anchor_lon) * ratio
+    return float(clamped_lat), float(clamped_lon)
+
+
+def _blend_coordinates(base_lat, base_lon, refined_lat, refined_lon, alpha):
+    """Blend refined coordinates with base coordinates using alpha in [0,1]."""
+    alpha = min(1.0, max(0.0, float(alpha)))
+    lat = (1.0 - alpha) * base_lat + alpha * refined_lat
+    lon = (1.0 - alpha) * base_lon + alpha * refined_lon
+    return float(lat), float(lon)
+
+
+def _resolve_refinement_policy(sightings):
+    """Return dynamic refinement parameters based on data quality/recency."""
+    if not sightings:
+        return {'blend_alpha': 0.0, 'max_radius_km': 45.0}
+
+    sighting_count = len(sightings)
+    latest_hours_since = min([float(s.get('hours_since', 9999)) for s in sightings]) if sightings else 9999
+
+    # Base trust in the refinement model grows with more signals.
+    blend_alpha = 0.45
+    if sighting_count >= 3:
+        blend_alpha = 0.58
+    if sighting_count >= 5:
+        blend_alpha = 0.68
+
+    # Very fresh sightings allow slightly wider movement.
+    max_radius_km = 45.0
+    if latest_hours_since <= 6:
+        max_radius_km = 75.0
+    elif latest_hours_since <= 24:
+        max_radius_km = 60.0
+    elif latest_hours_since <= 72:
+        max_radius_km = 50.0
+
+    return {'blend_alpha': blend_alpha, 'max_radius_km': max_radius_km}
+
 def refine_location_with_sightings(initial_prediction: dict, sightings: list, initial_case_input: dict):
     if not sightings or REFINEMENT_MODEL is None:
         return initial_prediction['predicted_latitude'], initial_prediction['predicted_longitude']
@@ -193,7 +240,9 @@ def refine_location_with_sightings(initial_prediction: dict, sightings: list, in
     seq_features=[]
     
     # 1. Prepare sequence features
-    for sighting in sorted(sightings, key=lambda s: s['hours_since']):
+    # hours_since is age of sighting; higher means older. Keep newest sightings in window.
+    ordered_sightings = sorted(sightings, key=lambda s: s['hours_since'], reverse=True)
+    for sighting in ordered_sightings:
         text_embedding=NLP_MODEL.encode(sighting['direction_text'], device=DEVICE); 
         features=[sighting['lat'],sighting['lon'],sighting['hours_since']]+list(text_embedding); 
         seq_features.append(features)
@@ -203,7 +252,7 @@ def refine_location_with_sightings(initial_prediction: dict, sightings: list, in
     seq_len = len(seq_features)
     
     if seq_len > 0:
-        # Use only the last MAX_SEQ_LEN points
+        # Use the newest MAX_SEQ_LEN points while preserving temporal order within the selected window.
         seq_to_use = seq_features[-MAX_SEQ_LEN:]
         padded_seq[-len(seq_to_use):] = np.array(seq_to_use, dtype=np.float32)
 
@@ -213,5 +262,29 @@ def refine_location_with_sightings(initial_prediction: dict, sightings: list, in
     with torch.no_grad():
         # REFINEMENT_MODEL outputs the final predicted coordinate (Batch x 2)
         refined_coords = REFINEMENT_MODEL(seq_tensor, static_features).cpu().numpy()[0]
-        
-    return float(refined_coords[0]), float(refined_coords[1])
+
+    raw_refined_lat = float(refined_coords[0])
+    raw_refined_lon = float(refined_coords[1])
+    base_lat = float(initial_prediction['predicted_latitude'])
+    base_lon = float(initial_prediction['predicted_longitude'])
+
+    policy = _resolve_refinement_policy(sightings)
+    blended_lat, blended_lon = _blend_coordinates(
+        base_lat,
+        base_lon,
+        raw_refined_lat,
+        raw_refined_lon,
+        policy['blend_alpha']
+    )
+
+    anchor_lat = float(initial_case_input.get('latitude', base_lat))
+    anchor_lon = float(initial_case_input.get('longitude', base_lon))
+    final_lat, final_lon = _interpolate_towards(
+        anchor_lat,
+        anchor_lon,
+        blended_lat,
+        blended_lon,
+        policy['max_radius_km']
+    )
+
+    return final_lat, final_lon

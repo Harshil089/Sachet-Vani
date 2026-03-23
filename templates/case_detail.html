@@ -101,12 +101,22 @@
 
     <div class="col-md-8">
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>Sightings Map</h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Sightings Map</h5>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="rerun-ml-btn" data-report-id="{{ child.report_id }}">
+                    <i class="fas fa-rotate-right me-1"></i>Run ML Again
+                </button>
             </div>
             <div class="card-body">
                 <div id="map" style="height: 400px;"></div>
             </div>
+        </div>
+
+        <div class="card mb-4" id="ml-summary-card" style="display: none;">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">ML Prediction Summary</h5>
+            </div>
+            <div class="card-body" id="ml-summary-content"></div>
         </div>
 
         <div class="card">
@@ -209,13 +219,84 @@
     ]
 }
 </script>
+<script type="application/json" id="ml-data">
+{
+    "ml_prediction": {{ ml_prediction|tojson if ml_prediction else 'null' }},
+    "ml_refined": {{ ml_refined|tojson if ml_refined else 'null' }},
+    "ml_status": {{ ml_status|tojson if ml_status else 'null' }}
+}
+</script>
 {% endblock %}
 
 {% block scripts %}
+<style>
+    .ml-endpoint-icon {
+        background: transparent;
+        border: none;
+    }
+
+    .ml-endpoint-ping {
+        --ml-ping-color: #dc3545;
+        position: relative;
+        width: 18px;
+        height: 18px;
+    }
+
+    .ml-endpoint-ping .core {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: var(--ml-ping-color);
+        border: 2px solid #ffffff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+    }
+
+    .ml-endpoint-ping .ripple {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 12px;
+        height: 12px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        border: 2px solid var(--ml-ping-color);
+        opacity: 0.85;
+        animation: ml-ping-ripple 1.8s ease-out infinite;
+    }
+
+    .ml-endpoint-ping.is-latest .ripple {
+        animation-duration: 1.2s;
+        border-width: 3px;
+    }
+
+    .ml-latest-trail {
+        pointer-events: none;
+        filter: drop-shadow(0 0 6px rgba(220, 53, 69, 0.65));
+    }
+
+    @keyframes ml-ping-ripple {
+        0% {
+            transform: translate(-50%, -50%) scale(0.75);
+            opacity: 0.85;
+        }
+
+        100% {
+            transform: translate(-50%, -50%) scale(2.4);
+            opacity: 0;
+        }
+    }
+</style>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Parse map data from JSON
         var mapData = JSON.parse(document.getElementById('map-data').textContent);
+        var mlData = JSON.parse(document.getElementById('ml-data').textContent || '{}');
+        var reportId = '{{ child.report_id }}';
+        var mlHistoryKey = 'ml_line_history_' + reportId;
 
         // Initialize map
         var map = L.map('map');
@@ -279,13 +360,195 @@
             }
         });
 
-        // Fit map to show all markers
-        if (markers.length > 0) {
-            var group = new L.featureGroup(markers);
-            map.fitBounds(group.getBounds().pad(0.1));
+        function renderMlSummary(data) {
+            var summaryCard = document.getElementById('ml-summary-card');
+            var summaryContent = document.getElementById('ml-summary-content');
+            var prediction = data && data.ml_prediction;
+            var status = data && data.ml_status;
+
+            if (!prediction) {
+                if (status && status.message) {
+                    summaryCard.style.display = 'block';
+                    summaryContent.innerHTML = '<div class="alert alert-warning mb-0">' + status.message + '</div>';
+                } else {
+                    summaryCard.style.display = 'none';
+                }
+                return;
+            }
+
+            var riskMap = {0: 'Low', 1: 'Medium', 2: 'High'};
+            var initialLocationName = prediction.predicted_location_name || 'Location name unavailable';
+            var refinedLocationName = (data.ml_refined && data.ml_refined.location_name) ? data.ml_refined.location_name : null;
+            summaryCard.style.display = 'block';
+            summaryContent.innerHTML =
+                '<div class="row">' +
+                '<div class="col-md-4"><p><strong>Risk Label:</strong> ' + (riskMap[prediction.risk_label] || prediction.risk_label) + '</p><p><strong>Risk Confidence:</strong> ' + (((prediction.risk_prob || 0) * 100).toFixed(1)) + '%</p></div>' +
+                '<div class="col-md-4"><p><strong>Recovery Probability:</strong> ' + (((prediction.recovered_prob || 0) * 100).toFixed(1)) + '%</p><p><strong>Est. Recovery Time:</strong> ' + Math.round(prediction.recovery_time_hours || 0) + ' hrs</p></div>' +
+                '<div class="col-md-4"><p><strong>Initial Predicted Location:</strong><br>' + initialLocationName + '</p>' +
+                ((data.ml_refined && data.ml_refined.lat) ? ('<p><strong>Refined Location:</strong><br>' + (refinedLocationName || 'Location name unavailable') + '</p>') : '') +
+                '</div></div>';
+        }
+
+        function getMlTargetPoint(data) {
+            if (data && data.ml_refined && data.ml_refined.lat && data.ml_refined.lon) {
+                return [Number(data.ml_refined.lat), Number(data.ml_refined.lon)];
+            }
+            if (data && data.ml_prediction && data.ml_prediction.predicted_latitude && data.ml_prediction.predicted_longitude) {
+                return [Number(data.ml_prediction.predicted_latitude), Number(data.ml_prediction.predicted_longitude)];
+            }
+            return null;
+        }
+
+        function loadMlHistory() {
+            try {
+                var raw = localStorage.getItem(mlHistoryKey);
+                var parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveMlHistory(history) {
+            try {
+                localStorage.setItem(mlHistoryKey, JSON.stringify(history.slice(-8)));
+            } catch (e) {
+                // ignore storage failures silently
+            }
+        }
+
+        function addCurrentPredictionToHistory(data) {
+            var point = getMlTargetPoint(data);
+            if (!point) {
+                return loadMlHistory();
+            }
+            var history = loadMlHistory();
+            var last = history.length ? history[history.length - 1] : null;
+            if (!last || Math.abs(last.lat - point[0]) > 0.00001 || Math.abs(last.lng - point[1]) > 0.00001) {
+                history.push({ lat: point[0], lng: point[1], ts: Date.now() });
+            }
+            saveMlHistory(history);
+            return history;
+        }
+
+        function drawMlHistoryLines(history, origin) {
+            if (!origin || !history.length) {
+                return;
+            }
+            var olderPalette = ['#6f42c1', '#20c997', '#0d6efd', '#f39c12', '#8e44ad'];
+            var latestLocationName = (mlData && mlData.ml_refined && mlData.ml_refined.location_name)
+                ? mlData.ml_refined.location_name
+                : ((mlData && mlData.ml_prediction && mlData.ml_prediction.predicted_location_name)
+                    ? mlData.ml_prediction.predicted_location_name
+                    : null);
+
+            function lerpPoint(start, end, t) {
+                return [
+                    start[0] + (end[0] - start[0]) * t,
+                    start[1] + (end[1] - start[1]) * t
+                ];
+            }
+
+            function createEndpointIcon(color, isLatest) {
+                var latestClass = isLatest ? ' is-latest' : '';
+                return L.divIcon({
+                    className: 'ml-endpoint-icon',
+                    iconSize: [18, 18],
+                    iconAnchor: [9, 9],
+                    html:
+                        '<div class="ml-endpoint-ping' + latestClass + '" style="--ml-ping-color:' + color + ';">' +
+                        '<span class="ripple"></span>' +
+                        '<span class="core"></span>' +
+                        '</div>'
+                });
+            }
+
+            history.forEach(function (entry, index) {
+                var isLatest = index === history.length - 1;
+                var color = isLatest ? '#dc3545' : olderPalette[index % olderPalette.length];
+                L.polyline([origin, [entry.lat, entry.lng]], {
+                    color: color,
+                    weight: 4,
+                    opacity: 0.85,
+                    dashArray: isLatest ? null : '8,8'
+                }).addTo(map).bindPopup(isLatest ? 'Latest ML Prediction Path' : 'Previous ML Prediction Path');
+
+                if (isLatest) {
+                    var endPoint = [entry.lat, entry.lng];
+                    var glowStart = lerpPoint(origin, endPoint, 0.86);
+                    L.polyline([glowStart, endPoint], {
+                        color: color,
+                        weight: 10,
+                        opacity: 0.2,
+                        className: 'ml-latest-trail'
+                    }).addTo(map);
+                    L.polyline([glowStart, endPoint], {
+                        color: color,
+                        weight: 6,
+                        opacity: 0.45
+                    }).addTo(map);
+                }
+
+                L.marker([entry.lat, entry.lng], {
+                    icon: createEndpointIcon(color, isLatest),
+                    keyboard: false,
+                    zIndexOffset: isLatest ? 1000 : 500
+                }).addTo(map).bindPopup(
+                    isLatest
+                        ? ('Latest Predicted Endpoint<br><strong>Location:</strong> ' + (latestLocationName || 'Location name unavailable'))
+                        : 'Previous Predicted Endpoint'
+                );
+            });
+        }
+
+        var history = addCurrentPredictionToHistory(mlData);
+        var mlOrigin = null;
+        if (mapData.lastSeenLocation.lat !== null && mapData.lastSeenLocation.lng !== null) {
+            mlOrigin = [mapData.lastSeenLocation.lat, mapData.lastSeenLocation.lng];
+        }
+        drawMlHistoryLines(history, mlOrigin);
+
+        renderMlSummary(mlData);
+
+        // Fit map to show all markers and ML line endpoints
+        if (markers.length > 0 || history.length > 0) {
+            var bounds = markers.length > 0 ? new L.featureGroup(markers).getBounds() : L.latLngBounds([]);
+            history.forEach(function (entry) {
+                bounds.extend([entry.lat, entry.lng]);
+            });
+            if (mlOrigin) {
+                bounds.extend(mlOrigin);
+            }
+            map.fitBounds(bounds.pad(0.1));
         } else {
             // Default view if no markers
             map.setView([39.8283, -98.5795], 4); // Center of USA
+        }
+
+        var rerunBtn = document.getElementById('rerun-ml-btn');
+        if (rerunBtn) {
+            rerunBtn.addEventListener('click', async function () {
+                var reportId = rerunBtn.getAttribute('data-report-id');
+                rerunBtn.disabled = true;
+                rerunBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+                try {
+                    const response = await fetch('/api/case/' + reportId + '/ml/rerun', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        window.location.reload();
+                        return;
+                    }
+                    alert('ML rerun failed: ' + (result.error || 'unknown error'));
+                } catch (err) {
+                    alert('ML rerun failed. Please try again.');
+                } finally {
+                    rerunBtn.disabled = false;
+                    rerunBtn.innerHTML = '<i class="fas fa-rotate-right me-1"></i>Run ML Again';
+                }
+            });
         }
     });
 

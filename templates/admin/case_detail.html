@@ -92,7 +92,7 @@
     {{ risk_zones|tojson|safe }}
 </script>
 <script type="application/json" id="ml-data">
-    {{ {'ml_prediction': ml_prediction, 'ml_refined': ml_refined}|tojson|safe }}
+    {{ {'ml_prediction': ml_prediction, 'ml_refined': ml_refined, 'ml_status': ml_status}|tojson|safe }}
 </script>
 <script type="application/json" id="heat-data">
     {{ heat_data|tojson|safe }}
@@ -180,8 +180,11 @@
 
     <div class="col-md-8">
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>Sightings Map</h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Sightings Map</h5>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="rerun-ml-btn" data-report-id="{{ child.report_id }}">
+                    <i class="fas fa-rotate-right me-1"></i>Run ML Again
+                </button>
             </div>
             <div class="card-body">
                 <div id="map" style="height: 400px;"></div>
@@ -206,10 +209,9 @@
                         <p><strong>Est. Recovery Time:</strong> {{ ml_prediction.recovery_time_hours or 'N/A' }} hrs</p>
                     </div>
                     <div class="col-md-4">
-                        <p><strong>Initial Predicted Location:</strong><br>{{ ml_prediction.predicted_latitude }}, {{
-                            ml_prediction.predicted_longitude }}</p>
+                        <p><strong>Initial Predicted Location:</strong><br>{{ ml_prediction.predicted_location_name or 'Location name unavailable' }}</p>
                         {% if ml_refined %}
-                        <p><strong>Refined Location:</strong><br>{{ ml_refined.lat }}, {{ ml_refined.lon }}</p>
+                        <p><strong>Refined Location:</strong><br>{{ ml_refined.location_name or 'Location name unavailable' }}</p>
                         {% endif %}
                     </div>
                 </div>
@@ -368,7 +370,8 @@
     <script type="application/json" id="ml-data">
 {
     "ml_prediction": {{ ml_prediction|tojson if ml_prediction else 'null' }},
-    "ml_refined": {{ ml_refined|tojson if ml_refined else 'null' }}
+        "ml_refined": {{ ml_refined|tojson if ml_refined else 'null' }},
+        "ml_status": {{ ml_status|tojson if ml_status else 'null' }}
 }
 </script>
 
@@ -417,8 +420,36 @@
                 });
             }
 
+            const rerunMlBtn = document.getElementById('rerun-ml-btn');
+            if (rerunMlBtn) {
+                rerunMlBtn.addEventListener('click', async function () {
+                    const reportId = rerunMlBtn.getAttribute('data-report-id');
+                    rerunMlBtn.disabled = true;
+                    rerunMlBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+                    try {
+                        const response = await fetch('/api/case/' + reportId + '/ml/rerun', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            window.location.reload();
+                            return;
+                        }
+                        alert('ML rerun failed: ' + (result.error || 'unknown error'));
+                    } catch (err) {
+                        alert('ML rerun failed. Please try again.');
+                    } finally {
+                        rerunMlBtn.disabled = false;
+                        rerunMlBtn.innerHTML = '<i class="fas fa-rotate-right me-1"></i>Run ML Again';
+                    }
+                });
+            }
+
             // Parse map data from JSON
             var mapData = JSON.parse(document.getElementById('map-data').textContent);
+            var reportId = '{{ child.report_id }}';
+            var mlHistoryKey = 'ml_line_history_' + reportId;
 
             // Initialize map
             var map = L.map('map');
@@ -429,6 +460,64 @@
             }).addTo(map);
 
             var markers = [];
+
+            function getMlTargetPoint(data) {
+                if (data && data.ml_refined && data.ml_refined.lat && data.ml_refined.lon) {
+                    return [Number(data.ml_refined.lat), Number(data.ml_refined.lon)];
+                }
+                if (data && data.ml_prediction && data.ml_prediction.predicted_latitude && data.ml_prediction.predicted_longitude) {
+                    return [Number(data.ml_prediction.predicted_latitude), Number(data.ml_prediction.predicted_longitude)];
+                }
+                return null;
+            }
+
+            function loadMlHistory() {
+                try {
+                    var raw = localStorage.getItem(mlHistoryKey);
+                    var parsed = raw ? JSON.parse(raw) : [];
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function saveMlHistory(history) {
+                try {
+                    localStorage.setItem(mlHistoryKey, JSON.stringify(history.slice(-8)));
+                } catch (e) {
+                    // ignore storage failures silently
+                }
+            }
+
+            function addCurrentPredictionToHistory(data) {
+                var point = getMlTargetPoint(data);
+                if (!point) {
+                    return loadMlHistory();
+                }
+                var history = loadMlHistory();
+                var last = history.length ? history[history.length - 1] : null;
+                if (!last || Math.abs(last.lat - point[0]) > 0.00001 || Math.abs(last.lng - point[1]) > 0.00001) {
+                    history.push({ lat: point[0], lng: point[1], ts: Date.now() });
+                }
+                saveMlHistory(history);
+                return history;
+            }
+
+            function drawMlHistoryLines(history, origin) {
+                if (!origin || !history.length) {
+                    return;
+                }
+                var olderPalette = ['#6f42c1', '#20c997', '#0d6efd', '#f39c12', '#8e44ad'];
+                history.forEach(function (entry, index) {
+                    var color = (index === history.length - 1) ? '#dc3545' : olderPalette[index % olderPalette.length];
+                    L.polyline([origin, [entry.lat, entry.lng]], {
+                        color: color,
+                        weight: 4,
+                        opacity: 0.85,
+                        dashArray: (index === history.length - 1) ? null : '8,8'
+                    }).addTo(map).bindPopup(index === history.length - 1 ? 'Latest ML Prediction Path' : 'Previous ML Prediction Path');
+                });
+            }
 
             // Add last seen location marker (red)
             if (mapData.lastSeenLocation.lat !== null && mapData.lastSeenLocation.lng !== null) {
@@ -482,39 +571,14 @@
                 }
             });
 
-            // Add ML prediction markers if available
+            // Add ML prediction history lines if available
             try {
                 var mlDataEl = document.getElementById('ml-data');
                 if (mlDataEl) {
                     var mlData = JSON.parse(mlDataEl.textContent);
-                    if (mlData && mlData.ml_prediction) {
-                        var p = mlData.ml_prediction;
-                        if (p.predicted_latitude && p.predicted_longitude) {
-                            var predMarker = L.marker([p.predicted_latitude, p.predicted_longitude], {
-                                icon: L.icon({
-                                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-                                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                                    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-                                })
-                            }).addTo(map);
-                            predMarker.bindPopup('ML Initial Prediction');
-                            markers.push(predMarker);
-                        }
-                    }
-
-                    if (mlData && mlData.ml_refined) {
-                        var r = mlData.ml_refined;
-                        if (r.lat && r.lon) {
-                            var refMarker = L.marker([r.lat, r.lon], {
-                                icon: L.icon({
-                                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png',
-                                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                                    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-                                })
-                            }).addTo(map);
-                            refMarker.bindPopup('ML Refined Prediction');
-                            markers.push(refMarker);
-                        }
+                    var history = addCurrentPredictionToHistory(mlData);
+                    if (mapData.lastSeenLocation.lat !== null && mapData.lastSeenLocation.lng !== null) {
+                        drawMlHistoryLines(history, [mapData.lastSeenLocation.lat, mapData.lastSeenLocation.lng]);
                     }
                 }
             } catch (e) {
@@ -640,6 +704,18 @@
             // but the dashed line clearly indicates the path.
             map.fitBounds(travelPath.getBounds().pad(0.2));
         }
+
+        // Expand bounds with ML history endpoints so old/new prediction lines stay visible
+        try {
+            var mlHistory = loadMlHistory();
+            if (markers.length > 0 && mlHistory.length > 0) {
+                var historyBounds = new L.featureGroup(markers).getBounds();
+                mlHistory.forEach(function (entry) {
+                    historyBounds.extend([entry.lat, entry.lng]);
+                });
+                map.fitBounds(historyBounds.pad(0.1));
+            }
+        } catch (e) { }
 
         // Fit map to show all markers
         if (markers.length > 0) {

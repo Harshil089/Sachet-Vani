@@ -2,15 +2,16 @@ import os
 from dotenv import load_dotenv
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+IS_CLOUD_ENV = bool(os.environ.get('RENDER') or os.environ.get('VERCEL'))
 
 # Only load .env in development
-if not os.environ.get('RENDER'):
+if not IS_CLOUD_ENV:
     load_dotenv(os.path.join(basedir, '.env'))
 
 class Config:
     # Security: No default secret key in production
     SECRET_KEY = os.environ.get('SECRET_KEY')
-    if not SECRET_KEY and not os.environ.get('RENDER'):
+    if not SECRET_KEY and not IS_CLOUD_ENV:
         SECRET_KEY = 'dev-secret-key-change-in-production'
     
     # Database Configuration - Use persistent storage
@@ -58,7 +59,7 @@ class Config:
     ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
     # Security: No default password in production
     ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
-    if not ADMIN_PASSWORD and not os.environ.get('RENDER'):
+    if not ADMIN_PASSWORD and not IS_CLOUD_ENV:
         ADMIN_PASSWORD = 'admin123'
         
     # Admin security
@@ -68,13 +69,13 @@ class Config:
     
     # Police access token (for authorized personnel to report missing children)
     POLICE_ACCESS_TOKEN = os.environ.get('POLICE_ACCESS_TOKEN')
-    if not POLICE_ACCESS_TOKEN and not os.environ.get('RENDER'):
+    if not POLICE_ACCESS_TOKEN and not IS_CLOUD_ENV:
         POLICE_ACCESS_TOKEN = 'police123'  # Default for development only
     
     # Police credentials (for login portal)
     POLICE_USERNAME = os.environ.get('POLICE_USERNAME', 'police')
     POLICE_PASSWORD = os.environ.get('POLICE_PASSWORD')
-    if not POLICE_PASSWORD and not os.environ.get('RENDER'):
+    if not POLICE_PASSWORD and not IS_CLOUD_ENV:
         POLICE_PASSWORD = 'police123'  # Default for development only
     
     # Environment
@@ -84,7 +85,7 @@ class Config:
     @staticmethod
     def check_production_security():
         """Check for security misconfigurations in production"""
-        if os.environ.get('RENDER'):
+        if IS_CLOUD_ENV:
             if not os.environ.get('SECRET_KEY'):
                 print("🚨 CRITICAL: SECRET_KEY not set in production!")
             if not os.environ.get('ADMIN_PASSWORD'):
