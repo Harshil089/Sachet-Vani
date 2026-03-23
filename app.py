@@ -66,6 +66,9 @@ _ML_CACHE_MAX_ENTRIES = 500
 _ML_CACHE_TTL_SECONDS = int(os.environ.get('ML_CACHE_TTL_SECONDS', '86400'))
 _redis_client = None
 IS_SERVERLESS_ENV = bool(os.environ.get('RENDER') or os.environ.get('VERCEL'))
+ML_SERVICE_URL = (os.environ.get('ML_SERVICE_URL') or '').strip().rstrip('/')
+ML_SERVICE_TOKEN = (os.environ.get('ML_SERVICE_TOKEN') or '').strip()
+ML_SERVICE_TIMEOUT_SECONDS = int(os.environ.get('ML_SERVICE_TIMEOUT_SECONDS', '30'))
 
 
 def _get_redis_client():
@@ -92,6 +95,103 @@ def _get_redis_client():
 
 def _ml_cache_key(report_id):
     return f"ml_case_cache:{report_id}"
+
+
+def _ml_service_headers():
+    headers = {'Content-Type': 'application/json'}
+    if ML_SERVICE_TOKEN:
+        headers['Authorization'] = f'Bearer {ML_SERVICE_TOKEN}'
+        headers['X-ML-Service-Token'] = ML_SERVICE_TOKEN
+    return headers
+
+
+def _is_ml_service_request_authorized():
+    """Validate inbound token for ML service endpoints when token auth is enabled."""
+    if not ML_SERVICE_TOKEN:
+        return True
+
+    auth_header = request.headers.get('Authorization', '').strip()
+    token_header = request.headers.get('X-ML-Service-Token', '').strip()
+
+    if auth_header.lower().startswith('bearer '):
+        bearer = auth_header.split(' ', 1)[1].strip()
+        if bearer == ML_SERVICE_TOKEN:
+            return True
+
+    if token_header and token_header == ML_SERVICE_TOKEN:
+        return True
+
+    return False
+
+
+def _serialize_case_input_for_json(case_input):
+    serialized = {}
+    for key, value in case_input.items():
+        if isinstance(value, (datetime,)):
+            serialized[key] = value.isoformat()
+        elif hasattr(value, 'isoformat') and callable(value.isoformat):
+            try:
+                serialized[key] = value.isoformat()
+            except Exception:
+                serialized[key] = value
+        else:
+            serialized[key] = value
+    return serialized
+
+
+def _call_external_ml_service(case_input, sighting_dicts):
+    if not ML_SERVICE_URL:
+        raise RuntimeError('ML_SERVICE_URL is not configured')
+
+    headers = _ml_service_headers()
+    predict_url = f"{ML_SERVICE_URL}/api/ml/predict"
+    refine_url = f"{ML_SERVICE_URL}/api/ml/refine"
+
+    predict_payload = _serialize_case_input_for_json(case_input)
+    predict_resp = requests.post(
+        predict_url,
+        json=predict_payload,
+        headers=headers,
+        timeout=ML_SERVICE_TIMEOUT_SECONDS
+    )
+
+    try:
+        predict_data = predict_resp.json()
+    except Exception:
+        predict_data = {'success': False, 'error': f'Invalid ML service response ({predict_resp.status_code})'}
+
+    if predict_resp.status_code >= 400 or not predict_data.get('success'):
+        raise RuntimeError(predict_data.get('error') or f'ML predict failed with {predict_resp.status_code}')
+
+    ml_prediction = predict_data.get('prediction')
+    remote_case_input = predict_data.get('case_input') or predict_payload
+    ml_refined = None
+
+    if sighting_dicts:
+        refine_payload = {
+            'initial_prediction': ml_prediction,
+            'sightings': sighting_dicts,
+            'initial_case_input': remote_case_input,
+        }
+        refine_resp = requests.post(
+            refine_url,
+            json=refine_payload,
+            headers=headers,
+            timeout=ML_SERVICE_TIMEOUT_SECONDS
+        )
+
+        try:
+            refine_data = refine_resp.json()
+        except Exception:
+            refine_data = {'success': False, 'error': f'Invalid ML refine response ({refine_resp.status_code})'}
+
+        if refine_resp.status_code < 400 and refine_data.get('success'):
+            ml_refined = {
+                'lat': refine_data.get('refined_lat'),
+                'lon': refine_data.get('refined_lon')
+            }
+
+    return ml_prediction, ml_refined
 
 def _get_client_ip():
     try:
@@ -516,12 +616,6 @@ def _compute_case_ml_outputs(missing_child, sightings, context_label='case', use
     ml_refined = None
     ml_status = {'available': False, 'message': ''}
 
-    if IS_SERVERLESS_ENV:
-        msg = f"ML skipped on serverless for {context_label} {missing_child.report_id} (memory constraints)"
-        print(msg)
-        ml_status['message'] = 'ML is unavailable in this deployment environment.'
-        return ml_prediction, ml_refined, ml_status
-
     cache_signature = _build_ml_cache_signature(missing_child, sightings)
     if use_cache and not force_refresh:
         cached = _get_cached_ml_outputs(missing_child.report_id, cache_signature)
@@ -530,6 +624,36 @@ def _compute_case_ml_outputs(missing_child, sightings, context_label='case', use
             if isinstance(cached_status, dict):
                 cached_status['from_cache'] = True
             return cached_prediction, cached_refined, cached_status
+
+    if IS_SERVERLESS_ENV:
+        if not ML_SERVICE_URL:
+            msg = f"ML skipped on serverless for {context_label} {missing_child.report_id}: ML_SERVICE_URL missing"
+            print(msg)
+            ml_status['message'] = 'ML service is not configured for this deployment environment.'
+            return ml_prediction, ml_refined, ml_status
+
+        try:
+            case_input = _build_case_input_from_child(missing_child, haversine_fn=None)
+            sighting_dicts = _build_sighting_dicts(sightings)
+            ml_prediction, ml_refined = _call_external_ml_service(case_input, sighting_dicts)
+
+            ml_prediction, ml_refined = _attach_location_names_to_ml_outputs(
+                ml_prediction,
+                ml_refined,
+                missing_child=missing_child,
+                sightings=sightings
+            )
+
+            ml_status['available'] = True
+            ml_status['from_cache'] = False
+            ml_status['source'] = 'external_ml_service'
+            if use_cache and missing_child.report_id:
+                _store_cached_ml_outputs(missing_child.report_id, cache_signature, ml_prediction, ml_refined, ml_status)
+            return ml_prediction, ml_refined, ml_status
+        except Exception as e:
+            print(f"External ML integration skipped for {context_label} {missing_child.report_id}: {e}")
+            ml_status['message'] = str(e)
+            return ml_prediction, ml_refined, ml_status
 
     try:
         from predictor import predict_initial_case, refine_location_with_sightings, haversine
@@ -551,6 +675,7 @@ def _compute_case_ml_outputs(missing_child, sightings, context_label='case', use
 
         ml_status['available'] = True
         ml_status['from_cache'] = False
+        ml_status['source'] = 'local_ml_models'
         if use_cache and missing_child.report_id:
             _store_cached_ml_outputs(missing_child.report_id, cache_signature, ml_prediction, ml_refined, ml_status)
         return ml_prediction, ml_refined, ml_status
@@ -2094,10 +2219,26 @@ def ml_page():
 @app.route('/api/ml/predict', methods=['POST'])
 def api_ml_predict():
     if IS_SERVERLESS_ENV:
-        return jsonify({
-            'success': False,
-            'error': 'ML is disabled in this serverless deployment environment'
-        }), 503
+        if not ML_SERVICE_URL:
+            return jsonify({
+                'success': False,
+                'error': 'ML service is not configured for this deployment environment'
+            }), 503
+
+        payload = request.get_json() or {}
+        try:
+            response = requests.post(
+                f"{ML_SERVICE_URL}/api/ml/predict",
+                json=payload,
+                headers=_ml_service_headers(),
+                timeout=ML_SERVICE_TIMEOUT_SECONDS
+            )
+            return jsonify(response.json()), response.status_code
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
+
+    if not _is_ml_service_request_authorized():
+        return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
 
     payload = request.get_json() or {}
     try:
@@ -2147,10 +2288,26 @@ def api_ml_predict():
 @app.route('/api/ml/refine', methods=['POST'])
 def api_ml_refine():
     if IS_SERVERLESS_ENV:
-        return jsonify({
-            'success': False,
-            'error': 'ML is disabled in this serverless deployment environment'
-        }), 503
+        if not ML_SERVICE_URL:
+            return jsonify({
+                'success': False,
+                'error': 'ML service is not configured for this deployment environment'
+            }), 503
+
+        payload = request.get_json() or {}
+        try:
+            response = requests.post(
+                f"{ML_SERVICE_URL}/api/ml/refine",
+                json=payload,
+                headers=_ml_service_headers(),
+                timeout=ML_SERVICE_TIMEOUT_SECONDS
+            )
+            return jsonify(response.json()), response.status_code
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'External ML service unavailable: {e}'}), 503
+
+    if not _is_ml_service_request_authorized():
+        return jsonify({'success': False, 'error': 'Unauthorized ML service request'}), 401
 
     payload = request.get_json() or {}
     try:

@@ -110,12 +110,23 @@ This app is ready to deploy on Render or similar cloud platforms.
 - `CLOUDINARY_URL`
 - `REDIS_URL` (Upstash/Redis instance)
 - `ML_CACHE_TTL_SECONDS` (optional, default `86400`)
+- `ML_SERVICE_URL` (base URL of external ML API service)
+- `ML_SERVICE_TOKEN` (optional shared secret)
+- `ML_SERVICE_TIMEOUT_SECONDS` (optional, default `30`)
 - `VERCEL=1`
 4. Deploy.
 
 Notes:
 - ML cache now uses Redis when `REDIS_URL` is available; local in-memory cache is used as fallback.
 - This keeps case-level ML predictions reusable across serverless invocations and instances.
+
+External ML service flow on serverless:
+- Vercel app first checks ML cache.
+- On cache miss, it calls external endpoints:
+    - `POST <ML_SERVICE_URL>/api/ml/predict`
+    - `POST <ML_SERVICE_URL>/api/ml/refine`
+- Returned results are stored in Redis cache and then rendered on case maps/summaries.
+- If `ML_SERVICE_TOKEN` is set, external ML endpoints require this token via `Authorization: Bearer <token>` or `X-ML-Service-Token`.
 
 Serverless dependency note:
 - Vercel/Lambda has a strict ephemeral dependency size limit.
