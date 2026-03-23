@@ -71,6 +71,19 @@ ML_SERVICE_TOKEN = (os.environ.get('ML_SERVICE_TOKEN') or '').strip()
 ML_SERVICE_TIMEOUT_SECONDS = int(os.environ.get('ML_SERVICE_TIMEOUT_SECONDS', '30'))
 
 
+def _read_env_value(*names):
+    for name in names:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1].strip()
+        if value:
+            return value
+    return None
+
+
 def _get_redis_client():
     """Create and memoize Redis client for shared cache (optional)."""
     global _redis_client
@@ -78,7 +91,7 @@ def _get_redis_client():
     if _redis_client is not None:
         return _redis_client
 
-    redis_url = os.environ.get('REDIS_URL')
+    redis_url = _read_env_value('REDIS_URL', 'KV_URL', 'UPSTASH_REDIS_URL')
     if not redis_url or redis is None:
         return None
 
@@ -1502,7 +1515,11 @@ def bulk_delete_cases():
 
 @app.route('/')
 def index():
-    recent_cases = MissingChild.query.filter_by(status='missing').order_by(MissingChild.date_reported.desc()).limit(5).all()
+    try:
+        recent_cases = MissingChild.query.filter_by(status='missing').order_by(MissingChild.date_reported.desc()).limit(5).all()
+    except Exception as e:
+        app.logger.warning(f"Recent cases unavailable on homepage: {e}")
+        recent_cases = []
     return render_template('index.html', recent_cases=recent_cases)
 
 @app.route('/report', methods=['GET', 'POST'])

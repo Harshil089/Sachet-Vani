@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -8,6 +9,20 @@ IS_CLOUD_ENV = bool(os.environ.get('RENDER') or os.environ.get('VERCEL'))
 if not IS_CLOUD_ENV:
     load_dotenv(os.path.join(basedir, '.env'))
 
+
+def _read_env(*names):
+    """Read env var by priority and normalize optional surrounding quotes."""
+    for name in names:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1].strip()
+        if value:
+            return value
+    return None
+
 class Config:
     # Security: No default secret key in production
     SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -15,7 +30,29 @@ class Config:
         SECRET_KEY = 'dev-secret-key-change-in-production'
     
     # Database Configuration - Use persistent storage
-    DATABASE_URL = os.environ.get('DATABASE_URL')
+    DATABASE_URL = _read_env(
+        'DATABASE_URL',
+        'POSTGRES_URL',
+        'POSTGRES_PRISMA_URL',
+        'POSTGRES_URL_NON_POOLING',
+    )
+
+    # Build URL from Supabase Postgres parts if full URL vars are not present.
+    if not DATABASE_URL:
+        pg_host = _read_env('POSTGRES_HOST')
+        pg_user = _read_env('POSTGRES_USER')
+        pg_password = _read_env('POSTGRES_PASSWORD')
+        pg_database = _read_env('POSTGRES_DATABASE') or 'postgres'
+        pg_port = _read_env('POSTGRES_PORT') or '5432'
+
+        if pg_host and pg_user and pg_password:
+            safe_user = quote_plus(pg_user)
+            safe_password = quote_plus(pg_password)
+            safe_database = quote_plus(pg_database)
+            DATABASE_URL = (
+                f"postgresql://{safe_user}:{safe_password}@{pg_host}:{pg_port}/{safe_database}"
+                "?sslmode=require"
+            )
     
     if DATABASE_URL:
         # Use provided database URL (for production)
@@ -24,9 +61,17 @@ class Config:
         SQLALCHEMY_DATABASE_URI = DATABASE_URL
         print(f"✅ Using persistent database (production)")
     else:
-        # Fallback to SQLite for local development
-        SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'missing_children.db')
-        print(f"⚠️  Using SQLite database (development only - data will reset on deployment)")
+        # Fallback to SQLite. In serverless/cloud, use /tmp because /var/task is read-only.
+        if IS_CLOUD_ENV:
+            sqlite_tmp_path = '/tmp/missing_children.db'
+            SQLALCHEMY_DATABASE_URI = f'sqlite:///{sqlite_tmp_path}'
+            print(
+                "⚠️ DATABASE_URL not set in cloud env; using ephemeral SQLite at /tmp/missing_children.db "
+                "(data will reset)."
+            )
+        else:
+            SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'missing_children.db')
+            print("⚠️  Using SQLite database (development only)")
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {

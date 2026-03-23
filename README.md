@@ -93,6 +93,9 @@
 This app is ready to deploy on Render or similar cloud platforms.
 
 - Use the provided `render.yaml` (or equivalent Render dashboard configuration).
+- Render dependency set is isolated in `requirements-render.txt`.
+- Render environment template is isolated in `.env.render.example`.
+- Set Render Build Command to `pip install -r requirements-render.txt`.
 - Specify Python version to 3.11 in Render settings or runtime.txt.
 - Set all required environment variables in Render dashboard.
 - Use PostgreSQL for permanent data persistence.
@@ -103,12 +106,13 @@ This app is ready to deploy on Render or similar cloud platforms.
 1. Connect the repository to Vercel.
 2. Set build/output using the included [vercel.json](vercel.json) and entrypoint [api/index.py](api/index.py).
 3. Add environment variables in Vercel project settings:
-- `DATABASE_URL`
+- `DATABASE_URL` (preferred) or one of: `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`
+- If URL vars are not set, the app can also build a connection string from: `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`, optional `POSTGRES_PORT`
 - `SECRET_KEY`
 - `ADMIN_PASSWORD`
 - `POLICE_PASSWORD`
 - `CLOUDINARY_URL`
-- `REDIS_URL` (Upstash/Redis instance)
+- `REDIS_URL` (preferred) or `KV_URL` (Upstash)
 - `ML_CACHE_TTL_SECONDS` (optional, default `86400`)
 - `ML_SERVICE_URL` (base URL of external ML API service)
 - `ML_SERVICE_TOKEN` (optional shared secret)
