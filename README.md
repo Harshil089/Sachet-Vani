@@ -117,6 +117,11 @@ Notes:
 - ML cache now uses Redis when `REDIS_URL` is available; local in-memory cache is used as fallback.
 - This keeps case-level ML predictions reusable across serverless invocations and instances.
 
+Serverless dependency note:
+- Vercel/Lambda has a strict ephemeral dependency size limit.
+- Default `requirements.txt` is intentionally slim to keep deployment under limit.
+- Full ML dependencies are listed in `requirements-ml.txt` for local or non-serverless environments.
+
 ---
 
 ## Folder Structure

@@ -65,6 +65,7 @@ _ml_case_cache_lock = threading.Lock()
 _ML_CACHE_MAX_ENTRIES = 500
 _ML_CACHE_TTL_SECONDS = int(os.environ.get('ML_CACHE_TTL_SECONDS', '86400'))
 _redis_client = None
+IS_SERVERLESS_ENV = bool(os.environ.get('RENDER') or os.environ.get('VERCEL'))
 
 
 def _get_redis_client():
@@ -515,8 +516,8 @@ def _compute_case_ml_outputs(missing_child, sightings, context_label='case', use
     ml_refined = None
     ml_status = {'available': False, 'message': ''}
 
-    if os.environ.get('RENDER'):
-        msg = f"ML skipped on Render for {context_label} {missing_child.report_id} (memory constraints)"
+    if IS_SERVERLESS_ENV:
+        msg = f"ML skipped on serverless for {context_label} {missing_child.report_id} (memory constraints)"
         print(msg)
         ml_status['message'] = 'ML is unavailable in this deployment environment.'
         return ml_prediction, ml_refined, ml_status
@@ -2092,6 +2093,12 @@ def ml_page():
 
 @app.route('/api/ml/predict', methods=['POST'])
 def api_ml_predict():
+    if IS_SERVERLESS_ENV:
+        return jsonify({
+            'success': False,
+            'error': 'ML is disabled in this serverless deployment environment'
+        }), 503
+
     payload = request.get_json() or {}
     try:
         # Lazy import to avoid heavy startup cost if models are not present
@@ -2139,6 +2146,12 @@ def api_ml_predict():
 
 @app.route('/api/ml/refine', methods=['POST'])
 def api_ml_refine():
+    if IS_SERVERLESS_ENV:
+        return jsonify({
+            'success': False,
+            'error': 'ML is disabled in this serverless deployment environment'
+        }), 503
+
     payload = request.get_json() or {}
     try:
         from predictor import refine_location_with_sightings
