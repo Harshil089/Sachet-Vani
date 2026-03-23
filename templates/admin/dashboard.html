@@ -1,385 +1,751 @@
 {% extends "base.html" %}
 
-{% block title %}Admin Dashboard{% endblock %}
+{% block title %}Admin Dashboard — Sachet{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Admin Dashboard</h2>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  .dash-root {
+    font-family: 'Inter', sans-serif;
+    background: hsl(220, 14%, 96%);
+    min-height: 100vh;
+    padding: 32px;
+  }
+
+  /* ── Page Header ── */
+  .dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    animation: fadeSlideDown 0.4s ease both;
+  }
+  .dash-header h1 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: hsl(220, 60%, 18%);
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .dash-header p {
+    font-size: 0.8rem;
+    color: hsl(220, 10%, 52%);
+    margin: 2px 0 0;
+  }
+  .header-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 1px solid hsl(220, 13%, 88%);
+    background: white;
+    color: hsl(220, 20%, 35%);
+    text-decoration: none;
+    transition: background 150ms, border-color 150ms, box-shadow 150ms;
+    cursor: pointer;
+  }
+  .btn-ghost:hover {
+    background: hsl(220, 14%, 97%);
+    border-color: hsl(220, 20%, 78%);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    color: hsl(220, 60%, 18%);
+  }
+  .btn-ghost.danger {
+    color: hsl(0, 72%, 45%);
+    border-color: hsl(0, 72%, 90%);
+  }
+  .btn-ghost.danger:hover {
+    background: hsl(0, 100%, 98%);
+    border-color: hsl(0, 72%, 75%);
+  }
+
+  /* ── Stat Cards ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    padding: 24px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-left: 4px solid transparent;
+    transition: transform 200ms ease, box-shadow 200ms ease, backdrop-filter 200ms;
+    animation: fadeSlideUp 0.5s ease both;
+    cursor: default;
+  }
+  .stat-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+  }
+  .stat-card.red  { border-left-color: hsl(0, 72%, 51%); animation-delay: 0.05s; }
+  .stat-card.green{ border-left-color: hsl(152, 60%, 40%); animation-delay: 0.10s; }
+  .stat-card.blue { border-left-color: hsl(220, 60%, 42%); animation-delay: 0.15s; }
+  .stat-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: hsl(220, 10%, 55%);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .stat-card.red  .stat-value { color: hsl(0, 72%, 44%); }
+  .stat-card.green .stat-value { color: hsl(152, 60%, 35%); }
+  .stat-card.blue  .stat-value { color: hsl(220, 60%, 38%); }
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .stat-card.red  .stat-icon { background: hsl(0, 100%, 96%);   color: hsl(0, 72%, 51%); }
+  .stat-card.green .stat-icon{ background: hsl(152, 60%, 94%);  color: hsl(152, 60%, 35%); }
+  .stat-card.blue  .stat-icon{ background: hsl(220, 60%, 95%);  color: hsl(220, 60%, 42%); }
+  .stat-change {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: hsl(220, 10%, 60%);
+    margin-top: 6px;
+  }
+
+  /* ── Table Card ── */
+  .table-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow: hidden;
+    animation: fadeSlideUp 0.5s 0.2s ease both;
+  }
+  .table-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    background: hsl(220, 60%, 18%);
+    gap: 12px;
+  }
+  .table-card-header h2 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: white;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .table-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .tbl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 120ms;
+    text-decoration: none;
+  }
+  .tbl-btn.neutral {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.9);
+  }
+  .tbl-btn.neutral:hover { background: rgba(255,255,255,0.18); }
+  .tbl-btn.destruct {
+    background: hsl(0, 72%, 44%);
+    border-color: hsl(0, 72%, 44%);
+    color: white;
+  }
+  .tbl-btn.destruct:hover { background: hsl(0, 72%, 38%); }
+
+  /* ── Table ── */
+  .dash-table { width: 100%; border-collapse: collapse; }
+  .dash-table thead th {
+    padding: 11px 16px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: hsl(220, 10%, 52%);
+    background: hsl(220, 14%, 98%);
+    border-bottom: 1px solid hsl(220, 13%, 91%);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .dash-table tbody tr {
+    border-bottom: 1px solid hsl(220, 13%, 93%);
+    transition: background 150ms;
+    animation: rowSlideIn 0.35s ease both;
+  }
+  .dash-table tbody tr:nth-child(even) { background: hsl(220, 14%, 98.5%); }
+  .dash-table tbody tr:hover { background: hsl(220, 60%, 97%); }
+  .dash-table tbody td {
+    padding: 13px 16px;
+    font-size: 0.82rem;
+    color: hsl(220, 15%, 30%);
+    vertical-align: middle;
+  }
+  .report-id {
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.73rem;
+    color: hsl(220, 10%, 50%);
+    background: hsl(220, 14%, 96%);
+    padding: 2px 6px;
+    border-radius: 5px;
+  }
+  .child-name {
+    font-weight: 600;
+    color: hsl(220, 60%, 18%);
+  }
+
+  /* ── Status Pills ── */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .status-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .pill-missing {
+    background: hsl(0, 100%, 96%);
+    color: hsl(0, 72%, 42%);
+  }
+  .pill-missing .dot { background: hsl(0, 72%, 51%); animation: pulse 2s infinite; }
+  .pill-found {
+    background: hsl(152, 60%, 94%);
+    color: hsl(152, 60%, 30%);
+  }
+  .pill-found .dot { background: hsl(152, 60%, 40%); }
+  .pill-closed {
+    background: hsl(220, 10%, 93%);
+    color: hsl(220, 10%, 45%);
+  }
+  .pill-closed .dot { background: hsl(220, 10%, 60%); }
+
+  /* ── Action buttons ── */
+  .action-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .action-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    border: 1px solid hsl(220, 13%, 88%);
+    background: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: hsl(220, 15%, 45%);
+    text-decoration: none;
+    transition: all 130ms;
+    cursor: pointer;
+    position: relative;
+  }
+  .action-btn:hover { transform: scale(1.1); }
+  .action-btn.view:hover  { background: hsl(220, 60%, 95%); border-color: hsl(220, 60%, 80%); color: hsl(220, 60%, 38%); }
+  .action-btn.public:hover{ background: hsl(200, 70%, 95%); border-color: hsl(200, 70%, 75%); color: hsl(200, 70%, 38%); }
+  .action-btn.del:hover   { background: hsl(0, 100%, 97%);  border-color: hsl(0, 72%, 80%);  color: hsl(0, 72%, 44%); }
+  /* Tooltip */
+  .action-btn::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: hsl(220, 60%, 15%);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms;
+  }
+  .action-btn:hover::after { opacity: 1; }
+
+  /* ── Custom Checkbox ── */
+  .custom-cb {
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid hsl(220, 13%, 80%);
+    border-radius: 4px;
+    appearance: none;
+    background: white;
+    cursor: pointer;
+    transition: all 120ms;
+    position: relative;
+  }
+  .custom-cb:checked {
+    background: hsl(220, 60%, 42%);
+    border-color: hsl(220, 60%, 42%);
+  }
+  .custom-cb:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px; left: 4px;
+    width: 4px; height: 7px;
+    border: 2px solid white;
+    border-top: none; border-left: none;
+    transform: rotate(45deg);
+  }
+  .custom-cb:indeterminate {
+    background: hsl(220, 60%, 42%);
+    border-color: hsl(220, 60%, 42%);
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 24px;
+    color: hsl(220, 10%, 60%);
+  }
+  .empty-state .empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.4;
+  }
+
+  /* ── Modal ── */
+  .modal-backdrop { display: none !important; }
+  body.modal-open { overflow: auto !important; padding-right: 0 !important; }
+  .dash-modal .modal-content {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  }
+  .dash-modal .modal-header {
+    border-bottom: 1px solid hsl(220, 13%, 92%);
+    padding: 18px 24px;
+    background: none;
+  }
+  .dash-modal .modal-header.danger-header {
+    background: hsl(0, 100%, 98%);
+  }
+  .dash-modal .modal-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: hsl(220, 60%, 18%);
+  }
+  .dash-modal .modal-body { padding: 20px 24px; }
+  .dash-modal .modal-footer {
+    padding: 14px 24px;
+    border-top: 1px solid hsl(220, 13%, 92%);
+    gap: 8px;
+  }
+  .warn-box {
+    background: hsl(38, 100%, 96%);
+    border: 1px solid hsl(38, 80%, 82%);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 0.82rem;
+    color: hsl(38, 60%, 35%);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .case-info-box {
+    background: hsl(220, 14%, 97%);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 0.82rem;
+    color: hsl(220, 15%, 30%);
+  }
+  .case-info-box strong { color: hsl(220, 60%, 22%); }
+  .delete-list { font-size: 0.8rem; color: hsl(220, 10%, 55%); margin: 12px 0 0 0; }
+  .delete-list li { margin-bottom: 2px; }
+
+  /* ── Footer ── */
+  .dash-footer {
+    margin-top: 40px;
+    text-align: center;
+    font-size: 0.73rem;
+    color: hsl(220, 10%, 62%);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes rowSlideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* Stagger table rows */
+  .dash-table tbody tr:nth-child(1)  { animation-delay: 0.05s; }
+  .dash-table tbody tr:nth-child(2)  { animation-delay: 0.10s; }
+  .dash-table tbody tr:nth-child(3)  { animation-delay: 0.15s; }
+  .dash-table tbody tr:nth-child(4)  { animation-delay: 0.20s; }
+  .dash-table tbody tr:nth-child(5)  { animation-delay: 0.25s; }
+  .dash-table tbody tr:nth-child(n+6){ animation-delay: 0.30s; }
+
+  input[type="checkbox"] { pointer-events: auto !important; position: relative !important; }
+  .btn { pointer-events: auto !important; }
+  .delete-case-link { pointer-events: auto !important; z-index: 9999 !important; position: relative !important; }
+  .table-responsive { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+</style>
+
+<div class="dash-root">
+
+  <!-- Page Header -->
+  <div class="dash-header">
     <div>
-        <a href="{{ url_for('admin_analytics') }}" class="btn btn-info me-2">📊 Analytics</a>
-        <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-danger">Logout</a>
+      <h1>Case Management</h1>
+      <p>Live overview of all missing child reports</p>
     </div>
-</div>
+    <div class="header-actions">
+      <a href="{{ url_for('admin_analytics') }}" class="btn-ghost">
+        <i class="fas fa-chart-bar" style="font-size:0.75rem;"></i> Analytics
+      </a>
+      <a href="{{ url_for('admin_logout') }}" class="btn-ghost danger">
+        <i class="fas fa-sign-out-alt" style="font-size:0.75rem;"></i> Logout
+      </a>
+    </div>
+  </div>
 
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card text-white bg-danger">
-            <div class="card-body">
-                <h5 class="card-title">Active Cases</h5>
-                <h3>{{ active_cases }}</h3>
-            </div>
-        </div>
+  <!-- Stat Cards -->
+  <div class="stats-grid">
+    <div class="stat-card red">
+      <div>
+        <div class="stat-label">Active Missing</div>
+        <div class="stat-value">{{ active_cases }}</div>
+        <div class="stat-change">🔴 Requires immediate attention</div>
+      </div>
+      <div class="stat-icon"><i class="fas fa-child"></i></div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-white bg-success">
-            <div class="card-body">
-                <h5 class="card-title">Found Cases</h5>
-                <h3>{{ found_cases }}</h3>
-            </div>
-        </div>
+    <div class="stat-card green">
+      <div>
+        <div class="stat-label">Found Safe</div>
+        <div class="stat-value">{{ found_cases }}</div>
+        <div class="stat-change">✅ Successfully resolved</div>
+      </div>
+      <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
     </div>
-    <div class="col-md-4">
-        <div class="card text-white bg-primary">
-            <div class="card-body">
-                <h5 class="card-title">Total Cases</h5>
-                <h3>{{ total_cases }}</h3>
-            </div>
-        </div>
+    <div class="stat-card blue">
+      <div>
+        <div class="stat-label">Total Cases</div>
+        <div class="stat-value">{{ total_cases }}</div>
+        <div class="stat-change">📋 All time records</div>
+      </div>
+      <div class="stat-icon"><i class="fas fa-folder-open"></i></div>
     </div>
-</div>
+  </div>
 
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">All Cases</h5>
-        <div>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllButton">
-                <i class="fas fa-check-square me-1"></i>Select All
-            </button>
-            <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" style="display: none;">
-                <i class="fas fa-trash me-1"></i>Delete Selected
-            </button>
-        </div>
+  <!-- Cases Table -->
+  <div class="table-card">
+    <div class="table-card-header">
+      <h2><i class="fas fa-list-ul me-2" style="opacity:.7;"></i>All Cases</h2>
+      <div class="table-actions">
+        <button type="button" class="tbl-btn neutral" id="selectAllButton">
+          <i class="fas fa-check-square"></i> Select All
+        </button>
+        <button type="button" class="tbl-btn destruct" id="bulkDeleteBtn" style="display:none;">
+          <i class="fas fa-trash"></i> Delete Selected
+        </button>
+      </div>
     </div>
-    <div class="card-body">
-        <form id="bulkDeleteForm" method="POST" action="{{ url_for('bulk_delete_cases') }}">
-            <div class="table-responsive admin-table-scroll">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th width="50">
-                                <input type="checkbox" id="selectAllCheckbox">
-                            </th>
-                            <th>Report ID</th>
-                            <th>Name</th>
-                            <th>Age</th>
-                            <th>Status</th>
-                            <th>Date Reported</th>
-                            <th>Sightings</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for case in cases %}
-                        <tr>
-                            <td>
-                                <input type="checkbox" name="case_ids" value="{{ case.report_id }}" 
-                                       class="case-checkbox">
-                            </td>
-                            <td>{{ case.report_id }}</td>
-                            <td>{{ case.name }}</td>
-                            <td>{{ case.age }}</td>
-                            <td>
-                                <span class="badge bg-{{ 'danger' if case.status == 'missing' else 'success' if case.status == 'found' else 'secondary' }}">
-                                    {{ case.status.title() }}
-                                </span>
-                            </td>
-                            <td>{{ case.date_reported.strftime('%Y-%m-%d %H:%M') }}</td>
-                            <td>{{ case.sightings|length }}</td>
-                            <td>
-                                <div class="btn-group" role="group">
-                                    <a href="{{ url_for('admin_case_detail', report_id=case.report_id) }}" 
-                                       class="btn btn-sm btn-primary" title="View Details">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <a href="{{ url_for('case_detail', report_id=case.report_id) }}" 
-                                       class="btn btn-sm btn-info" title="Public View" target="_blank">
-                                        <i class="fas fa-external-link-alt"></i>
-                                    </a>
-                                    <a href="javascript:void(0)" 
-                                       class="btn btn-sm btn-danger delete-case-link" 
-                                       title="Delete Case"
-                                       data-report-id="{{ case.report_id }}"
-                                       data-child-name="{{ case.name }}">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </form>
-    </div>
+
+    <form id="bulkDeleteForm" method="POST" action="{{ url_for('bulk_delete_cases') }}">
+      <div class="table-responsive">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th style="width:44px;">
+                <input type="checkbox" id="selectAllCheckbox" class="custom-cb">
+              </th>
+              <th>Report ID</th>
+              <th>Name</th>
+              <th>Age</th>
+              <th>Status</th>
+              <th>Date Reported</th>
+              <th>Sightings</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case in cases %}
+            <tr>
+              <td>
+                <input type="checkbox" name="case_ids" value="{{ case.report_id }}"
+                       class="case-checkbox custom-cb">
+              </td>
+              <td><span class="report-id">{{ case.report_id }}</span></td>
+              <td><span class="child-name">{{ case.name }}</span></td>
+              <td>{{ case.age }}</td>
+              <td>
+                {% if case.status == 'missing' %}
+                  <span class="status-pill pill-missing">
+                    <span class="dot"></span>Missing
+                  </span>
+                {% elif case.status == 'found' %}
+                  <span class="status-pill pill-found">
+                    <span class="dot"></span>Found
+                  </span>
+                {% else %}
+                  <span class="status-pill pill-closed">
+                    <span class="dot"></span>{{ case.status.title() }}
+                  </span>
+                {% endif %}
+              </td>
+              <td>{{ case.date_reported.strftime('%b %d, %Y  %H:%M') }}</td>
+              <td>
+                <span style="font-weight:600; color:hsl(220,60%,38%);">{{ case.sightings|length }}</span>
+                <span style="font-size:0.72rem;color:hsl(220,10%,62%);"> reports</span>
+              </td>
+              <td>
+                <div class="action-group">
+                  <a href="{{ url_for('admin_case_detail', report_id=case.report_id) }}"
+                     class="action-btn view" data-tip="Admin View">
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  <a href="{{ url_for('case_detail', report_id=case.report_id) }}"
+                     class="action-btn public" data-tip="Public View" target="_blank">
+                    <i class="fas fa-external-link-alt"></i>
+                  </a>
+                  <a href="javascript:void(0)"
+                     class="action-btn del delete-case-link"
+                     data-tip="Delete"
+                     data-report-id="{{ case.report_id }}"
+                     data-child-name="{{ case.name }}">
+                    <i class="fas fa-trash"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-icon">📂</div>
+                  <div style="font-weight:600; color:hsl(220,60%,25%); margin-bottom:4px;">No cases found</div>
+                  <div style="font-size:0.78rem;">Reports submitted by police will appear here.</div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+  </div>
+
+  <!-- Footer -->
+  <div class="dash-footer">
+    SACHET Admin Portal &nbsp;·&nbsp; Secure Case Management System &nbsp;·&nbsp; {{ total_cases }} cases on record
+  </div>
+
 </div>
 
 <!-- Delete Confirmation Modal -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">⚠️ Confirm Deletion</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Warning:</strong> This action cannot be undone!
-                </div>
-                <p>Are you sure you want to permanently delete this case?</p>
-                <div class="bg-light p-3 rounded">
-                    <strong>Case:</strong> <span id="deleteCaseName"></span><br>
-                    <strong>Report ID:</strong> <span id="deleteCaseId"></span>
-                </div>
-                <p class="mt-3 text-muted">This will also delete:</p>
-                <ul class="text-muted">
-                    <li>All sighting reports</li>
-                    <li>Uploaded photos and audio files</li>
-                    <li>All associated data</li>
-                </ul>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="deleteForm" method="POST" style="display: inline;">
-                    <button type="submit" class="btn btn-danger">
-                        <i class="fas fa-trash me-1"></i>Yes, Delete Permanently
-                    </button>
-                </form>
-            </div>
+<div class="modal fade dash-modal" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header danger-header">
+        <h5 class="modal-title">⚠️ Confirm Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="warn-box">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span><strong>Warning:</strong> This action is permanent and cannot be undone.</span>
         </div>
+        <div class="case-info-box">
+          <strong>Case:</strong> <span id="deleteCaseName"></span><br>
+          <strong>Report ID:</strong> <span id="deleteCaseId" style="font-family:monospace;font-size:0.8rem;"></span>
+        </div>
+        <ul class="delete-list">
+          <li>All associated sighting reports</li>
+          <li>Uploaded photos and audio files</li>
+          <li>All linked analytics data</li>
+        </ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancel</button>
+        <form id="deleteForm" method="POST" style="display:inline;">
+          <button type="submit" class="tbl-btn destruct" style="padding:8px 18px;">
+            <i class="fas fa-trash"></i> Delete Permanently
+          </button>
+        </form>
+      </div>
     </div>
+  </div>
 </div>
 
 <!-- Bulk Delete Modal -->
-<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">⚠️ Confirm Bulk Deletion</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong>Critical Warning:</strong> You are about to delete multiple cases permanently!
-                </div>
-                <p>Selected cases: <span id="bulkDeleteCount" class="fw-bold text-danger"></span></p>
-                <p class="text-muted">This action will permanently delete all selected cases and their associated data including sightings, photos, and audio files.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmBulkDeleteBtn">
-                    <i class="fas fa-trash me-1"></i>Delete All Selected Cases
-                </button>
-            </div>
+<div class="modal fade dash-modal" id="bulkDeleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header danger-header">
+        <h5 class="modal-title">⚠️ Confirm Bulk Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="warn-box">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span><strong>Critical:</strong> You are about to permanently delete
+            <strong><span id="bulkDeleteCount"></span> cases</strong> and all their associated data.</span>
         </div>
+        <p style="font-size:0.82rem;color:hsl(220,10%,50%);margin:0;">
+          This includes sightings, uploaded media, and analytics records. This operation cannot be reversed.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="tbl-btn destruct" id="confirmBulkDeleteBtn" style="padding:8px 18px;">
+          <i class="fas fa-trash"></i> Delete All Selected
+        </button>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Dashboard loaded, initializing...');
-    
-    // Handle Select All button
-    const selectAllButton = document.getElementById('selectAllButton');
+    const selectAllButton   = document.getElementById('selectAllButton');
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    
+
     if (selectAllButton) {
         selectAllButton.addEventListener('click', function(e) {
-            console.log('Select All button clicked');
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const caseCheckboxes = document.querySelectorAll('.case-checkbox');
+            e.preventDefault(); e.stopPropagation();
+            const cbs = document.querySelectorAll('.case-checkbox');
             const isChecked = selectAllCheckbox.checked;
-            
-            // Toggle state
             selectAllCheckbox.checked = !isChecked;
-            
-            caseCheckboxes.forEach(checkbox => {
-                checkbox.checked = !isChecked;
-            });
-            
-            updateBulkDeleteButton();
-            updateSelectAllButtonText();
+            cbs.forEach(cb => cb.checked = !isChecked);
+            updateBulkDeleteButton(); updateSelectAllButtonText();
         });
     }
-    
-    // Handle main select all checkbox
+
     if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', function(e) {
-            console.log('Select all checkbox changed:', this.checked);
-            
-            const caseCheckboxes = document.querySelectorAll('.case-checkbox');
-            caseCheckboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
-            });
-            
-            updateBulkDeleteButton();
-            updateSelectAllButtonText();
+        selectAllCheckbox.addEventListener('change', function() {
+            document.querySelectorAll('.case-checkbox').forEach(cb => cb.checked = this.checked);
+            updateBulkDeleteButton(); updateSelectAllButtonText();
         });
     }
-    
-    // Handle individual case checkboxes
-    const caseCheckboxes = document.querySelectorAll('.case-checkbox');
-    caseCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            updateBulkDeleteButton();
-            updateSelectAllState();
-            updateSelectAllButtonText();
+
+    document.querySelectorAll('.case-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            updateBulkDeleteButton(); updateSelectAllState(); updateSelectAllButtonText();
         });
     });
-    
-    // Handle delete links
-    const deleteLinks = document.querySelectorAll('.delete-case-link');
-    deleteLinks.forEach((link) => {
+
+    document.querySelectorAll('.delete-case-link').forEach(link => {
         link.addEventListener('click', function(e) {
-            console.log('Delete link clicked');
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const reportId = this.getAttribute('data-report-id');
-            const childName = this.getAttribute('data-child-name');
-            
-            document.getElementById('deleteCaseName').textContent = childName;
-            document.getElementById('deleteCaseId').textContent = reportId;
-            document.getElementById('deleteForm').action = `/admin/delete_case/${reportId}`;
-            
-            const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'), {
-                backdrop: false,
-                keyboard: true
-            });
-            deleteModal.show();
+            e.preventDefault(); e.stopPropagation();
+            document.getElementById('deleteCaseName').textContent = this.dataset.childName;
+            document.getElementById('deleteCaseId').textContent   = this.dataset.reportId;
+            document.getElementById('deleteForm').action = `/admin/delete_case/${this.dataset.reportId}`;
+            new bootstrap.Modal(document.getElementById('deleteModal'), { backdrop: false }).show();
         });
     });
-    
-    // Handle bulk delete button
+
     const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
     if (bulkDeleteBtn) {
         bulkDeleteBtn.addEventListener('click', function(e) {
-            console.log('Bulk delete button clicked');
             e.preventDefault();
-            
-            const checkedBoxes = document.querySelectorAll('.case-checkbox:checked');
-            if (checkedBoxes.length === 0) {
-                alert('Please select at least one case to delete.');
-                return;
-            }
-            
-            document.getElementById('bulkDeleteCount').textContent = checkedBoxes.length;
-            const bulkModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'), {
-                backdrop: false,
-                keyboard: true
-            });
-            bulkModal.show();
+            const checked = document.querySelectorAll('.case-checkbox:checked');
+            if (!checked.length) { alert('Please select at least one case.'); return; }
+            document.getElementById('bulkDeleteCount').textContent = checked.length;
+            new bootstrap.Modal(document.getElementById('bulkDeleteModal'), { backdrop: false }).show();
         });
     }
-    
-    // Handle bulk delete confirmation
+
     const confirmBulkBtn = document.getElementById('confirmBulkDeleteBtn');
     if (confirmBulkBtn) {
         confirmBulkBtn.addEventListener('click', function() {
-            console.log('Bulk delete confirmed');
             document.getElementById('bulkDeleteForm').submit();
         });
     }
-    
-    // Initialize
-    updateBulkDeleteButton();
-    updateSelectAllButtonText();
+
+    updateBulkDeleteButton(); updateSelectAllButtonText();
 });
 
 function updateBulkDeleteButton() {
-    const checkedBoxes = document.querySelectorAll('.case-checkbox:checked');
-    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-    
-    if (checkedBoxes.length > 0) {
-        bulkDeleteBtn.style.display = 'inline-block';
-        bulkDeleteBtn.innerHTML = `<i class="fas fa-trash me-1"></i>Delete Selected (${checkedBoxes.length})`;
+    const checked = document.querySelectorAll('.case-checkbox:checked');
+    const btn = document.getElementById('bulkDeleteBtn');
+    if (checked.length > 0) {
+        btn.style.display = 'inline-flex';
+        btn.innerHTML = `<i class="fas fa-trash"></i> Delete (${checked.length})`;
     } else {
-        bulkDeleteBtn.style.display = 'none';
+        btn.style.display = 'none';
     }
 }
 
 function updateSelectAllState() {
-    const checkedBoxes = document.querySelectorAll('.case-checkbox:checked');
-    const totalBoxes = document.querySelectorAll('.case-checkbox');
-    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    
-    if (checkedBoxes.length === totalBoxes.length && totalBoxes.length > 0) {
-        selectAllCheckbox.checked = true;
-        selectAllCheckbox.indeterminate = false;
-    } else if (checkedBoxes.length > 0) {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = true;
+    const checked = document.querySelectorAll('.case-checkbox:checked');
+    const total   = document.querySelectorAll('.case-checkbox');
+    const cb      = document.getElementById('selectAllCheckbox');
+    if (checked.length === total.length && total.length > 0) {
+        cb.checked = true; cb.indeterminate = false;
+    } else if (checked.length > 0) {
+        cb.checked = false; cb.indeterminate = true;
     } else {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = false;
+        cb.checked = false; cb.indeterminate = false;
     }
 }
 
 function updateSelectAllButtonText() {
-    const selectAllButton = document.getElementById('selectAllButton');
-    const checkedBoxes = document.querySelectorAll('.case-checkbox:checked');
-    const totalBoxes = document.querySelectorAll('.case-checkbox');
-    
-    if (checkedBoxes.length === totalBoxes.length && totalBoxes.length > 0) {
-        selectAllButton.innerHTML = '<i class="fas fa-square me-1"></i>Deselect All';
-    } else {
-        selectAllButton.innerHTML = '<i class="fas fa-check-square me-1"></i>Select All';
-    }
+    const btn     = document.getElementById('selectAllButton');
+    const checked = document.querySelectorAll('.case-checkbox:checked');
+    const total   = document.querySelectorAll('.case-checkbox');
+    btn.innerHTML = (checked.length === total.length && total.length > 0)
+        ? '<i class="fas fa-square"></i> Deselect All'
+        : '<i class="fas fa-check-square"></i> Select All';
 }
 </script>
-
-<style>
-/* Force remove modal backdrops */
-.modal-backdrop {
-    display: none !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-}
-
-/* Ensure body doesn't get modal-open class stuck */
-body.modal-open {
-    overflow: auto !important;
-    padding-right: 0 !important;
-}
-
-/* Ensure all interactive elements are clickable */
-input[type="checkbox"] {
-    pointer-events: auto !important;
-    z-index: 999 !important;
-    position: relative !important;
-}
-
-.btn {
-    pointer-events: auto !important;
-    position: relative !important;
-    z-index: 999 !important;
-}
-
-.delete-case-link {
-    pointer-events: auto !important;
-    z-index: 9999 !important;
-    position: relative !important;
-}
-
-.btn-group {
-    position: relative !important;
-    z-index: 10 !important;
-}
-
-/* Ensure responsive table scrolls horizontally on small screens */
-.table-responsive {
-    overflow-x: auto !important;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-}
-
-.card-body {
-    overflow: visible !important;
-}
-</style>
 {% endblock %}

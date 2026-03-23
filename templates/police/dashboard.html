@@ -1,170 +1,571 @@
 {% extends "base.html" %}
 
-{% block title %}Police Dashboard - Sachet{% endblock %}
+{% block title %}Police Dashboard — Sachet{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card bg-primary text-white">
-                <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2 class="mb-0">
-                            <i class="fas fa-shield-alt me-2"></i>Police Dashboard
-                        </h2>
-                        <p class="mb-0 mt-1 opacity-75">Missing Children Alert System</p>
-                    </div>
-                    <div>
-                        <a href="{{ url_for('report_missing') }}" class="btn btn-light btn-lg me-2">
-                            <i class="fas fa-plus-circle me-1"></i>Report Missing Child
-                        </a>
-                        <a href="{{ url_for('police_logout') }}" class="btn btn-outline-light">
-                            <i class="fas fa-sign-out-alt me-1"></i>Logout
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  /* ── Root ── */
+  .pd-root {
+    background: hsl(220, 14%, 96%);
+    min-height: 100vh;
+    padding: 32px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ── Hero Banner ── */
+  .pd-hero {
+    position: relative;
+    background: hsl(220, 60%, 18%);
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+    overflow: hidden;
+    animation: fadeUp 0.45s ease both;
+    animation-delay: 0.08s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .pd-hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 260px; height: 260px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 50%;
+    filter: blur(40px);
+    pointer-events: none;
+  }
+  .pd-hero::after {
+    content: '';
+    position: absolute;
+    bottom: -40px; left: 20%;
+    width: 200px; height: 200px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 50%;
+    filter: blur(30px);
+    pointer-events: none;
+  }
+  .pd-hero-left {
+    position: relative;
+    z-index: 1;
+  }
+  .pd-hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+  .pd-hero h1 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.025em;
+    margin: 0 0 6px;
+    line-height: 1.15;
+  }
+  .pd-hero p {
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.55);
+    margin: 0;
+  }
+  .pd-hero-actions {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .hero-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: white;
+    color: hsl(220, 60%, 18%);
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transition: transform 150ms, box-shadow 150ms;
+  }
+  .hero-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    color: hsl(220, 60%, 18%);
+  }
+  .hero-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    text-decoration: none;
+    transition: background 150ms, border-color 150ms;
+  }
+  .hero-btn-outline:hover {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.35);
+    color: white;
+  }
+
+  /* ── Stat Cards ── */
+  .pd-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 900px) { .pd-stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .pd-stats { grid-template-columns: 1fr; } }
+
+  .pd-stat {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: transform 200ms ease, box-shadow 200ms ease;
+    animation: fadeUp 0.45s ease both;
+    cursor: default;
+  }
+  .pd-stat:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.10);
+  }
+  .pd-stat:nth-child(1) { animation-delay: 0.12s; }
+  .pd-stat:nth-child(2) { animation-delay: 0.20s; }
+  .pd-stat:nth-child(3) { animation-delay: 0.28s; }
+  .pd-stat:nth-child(4) { animation-delay: 0.36s; }
+
+  .pd-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin: 0 auto 14px;
+  }
+  .icon-red    { background: hsl(0, 100%, 96%);   color: hsl(0, 72%, 51%); }
+  .icon-cyan   { background: hsl(200, 90%, 94%);  color: hsl(200, 90%, 38%); }
+  .icon-green  { background: hsl(152, 60%, 94%);  color: hsl(152, 60%, 35%); }
+  .icon-amber  { background: hsl(38, 92%, 94%);   color: hsl(38, 92%, 38%); }
+
+  .pd-stat-num {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .num-red   { color: hsl(0, 72%, 44%); }
+  .num-cyan  { color: hsl(200, 90%, 38%); }
+  .num-green { color: hsl(152, 60%, 35%); }
+  .num-amber { color: hsl(38, 92%, 38%); }
+
+  .pd-stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: hsl(220, 10%, 58%);
+  }
+
+  /* ── Table Card ── */
+  .pd-table-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow: hidden;
+    animation: fadeUp 0.5s 0.3s ease both;
+  }
+  .pd-table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    background: hsl(220, 60%, 18%);
+  }
+  .pd-table-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .table-icon-box {
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.85);
+  }
+  .pd-table-header h2 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: white;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .case-count-badge {
+    background: rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.8);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Table ── */
+  .pd-table { width: 100%; border-collapse: collapse; }
+  .pd-table thead th {
+    padding: 10px 16px;
+    background: hsl(220, 14%, 98%);
+    border-bottom: 1px solid hsl(220, 13%, 91%);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: hsl(220, 10%, 52%);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .pd-table tbody tr {
+    border-bottom: 1px solid hsl(220, 13%, 93%);
+    transition: background 150ms;
+    animation: rowIn 0.35s ease both;
+  }
+  .pd-table tbody tr:hover { background: hsl(220, 60%, 98%); }
+  .pd-table tbody td {
+    padding: 14px 16px;
+    font-size: 0.82rem;
+    color: hsl(220, 15%, 30%);
+    vertical-align: middle;
+  }
+
+  /* Row stagger */
+  .pd-table tbody tr:nth-child(1) { animation-delay: 0.10s; }
+  .pd-table tbody tr:nth-child(2) { animation-delay: 0.16s; }
+  .pd-table tbody tr:nth-child(3) { animation-delay: 0.22s; }
+  .pd-table tbody tr:nth-child(4) { animation-delay: 0.28s; }
+  .pd-table tbody tr:nth-child(n+5){ animation-delay: 0.33s; }
+
+  /* ── Photo avatar ── */
+  .child-avatar {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+  .avatar-placeholder {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: hsl(220, 14%, 92%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    color: hsl(220, 10%, 60%);
+  }
+  .child-name-cell { font-weight: 600; color: hsl(220, 60%, 16%); }
+  .location-cell {
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: hsl(220, 10%, 50%);
+    font-size: 0.78rem;
+  }
+
+  /* ── Sightings badge ── */
+  .sightings-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: hsl(200, 90%, 94%);
+    color: hsl(200, 90%, 33%);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
+  }
+  .high-match-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: hsl(38, 92%, 94%);
+    color: hsl(38, 60%, 35%);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-left: 4px;
+  }
+
+  /* ── Status pills ── */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .pill-missing { background: hsl(0, 100%, 96%); color: hsl(0, 72%, 42%); }
+  .pill-missing .dot { background: hsl(0, 72%, 51%); animation: pulse 2s infinite; }
+  .pill-found   { background: hsl(152, 60%, 94%); color: hsl(152, 60%, 30%); }
+  .pill-found .dot { background: hsl(152, 60%, 40%); }
+  .pill-other   { background: hsl(220, 10%, 93%); color: hsl(220, 10%, 45%); }
+  .pill-other .dot { background: hsl(220, 10%, 60%); }
+
+  /* ── Action buttons ── */
+  .action-grp { display: flex; gap: 6px; }
+  .act-btn {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: 1px solid hsl(220, 13%, 88%);
+    background: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: hsl(220, 15%, 50%);
+    text-decoration: none;
+    transition: all 130ms;
+    position: relative;
+    cursor: pointer;
+  }
+  .act-btn:hover { transform: scale(1.1); }
+  .act-btn.view:hover {
+    background: hsl(200, 90%, 94%);
+    border-color: hsl(200, 90%, 70%);
+    color: hsl(200, 90%, 33%);
+  }
+  .act-btn.poster:hover {
+    background: hsl(38, 92%, 94%);
+    border-color: hsl(38, 92%, 70%);
+    color: hsl(38, 60%, 35%);
+  }
+  .act-btn::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: hsl(220, 60%, 15%);
+    color: white;
+    font-size: 0.63rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms;
+  }
+  .act-btn:hover::after { opacity: 1; }
+
+  /* ── Empty state ── */
+  .empty-state-row td {
+    padding: 56px 24px !important;
+    text-align: center;
+  }
+  .empty-icon { font-size: 2rem; opacity: 0.35; margin-bottom: 10px; }
+  .empty-title { font-weight: 600; color: hsl(220, 60%, 22%); margin-bottom: 4px; }
+  .empty-sub   { font-size: 0.78rem; color: hsl(220, 10%, 60%); }
+
+  /* ── Footer ── */
+  .pd-footer {
+    margin-top: 36px;
+    text-align: center;
+    font-size: 0.72rem;
+    color: hsl(220, 10%, 62%);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+  }
+</style>
+
+<div class="pd-root">
+
+  <!-- Hero Banner -->
+  <div class="pd-hero">
+    <div class="pd-hero-left">
+      <div class="pd-hero-badge">
+        <i class="fas fa-shield-alt"></i>
+        Secure Police Portal
+      </div>
+      <h1><i class="fas fa-shield-alt" style="font-size:1.4rem;margin-right:10px;opacity:.8;"></i>Police Dashboard</h1>
+      <p>Missing Children Alert System — Live case tracking and response center</p>
+    </div>
+    <div class="pd-hero-actions">
+      <a href="{{ url_for('report_missing') }}" class="hero-btn-primary">
+        <i class="fas fa-plus-circle"></i> Report Missing Child
+      </a>
+      <a href="{{ url_for('police_logout') }}" class="hero-btn-outline">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </a>
+    </div>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="pd-stats">
+    <div class="pd-stat">
+      <div class="pd-stat-icon icon-red"><i class="fas fa-exclamation-triangle"></i></div>
+      <div class="pd-stat-num num-red">{{ stats.active_cases }}</div>
+      <div class="pd-stat-label">Active Cases</div>
+    </div>
+    <div class="pd-stat">
+      <div class="pd-stat-icon icon-cyan"><i class="fas fa-eye"></i></div>
+      <div class="pd-stat-num num-cyan">{{ stats.total_sightings }}</div>
+      <div class="pd-stat-label">Total Sightings</div>
+    </div>
+    <div class="pd-stat">
+      <div class="pd-stat-icon icon-green"><i class="fas fa-check-circle"></i></div>
+      <div class="pd-stat-num num-green">{{ stats.resolved_cases }}</div>
+      <div class="pd-stat-label">Resolved Cases</div>
+    </div>
+    <div class="pd-stat">
+      <div class="pd-stat-icon icon-amber"><i class="fas fa-user-check"></i></div>
+      <div class="pd-stat-num num-amber">{{ stats.high_match_sightings }}</div>
+      <div class="pd-stat-label">High Face Match</div>
+    </div>
+  </div>
+
+  <!-- Cases Table -->
+  <div class="pd-table-card">
+    <div class="pd-table-header">
+      <div class="pd-table-title">
+        <div class="table-icon-box"><i class="fas fa-list"></i></div>
+        <h2>All Missing Children Cases</h2>
+      </div>
+      <span class="case-count-badge">{{ cases|length }} cases</span>
     </div>
 
-    <!-- Stats Row -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-center h-100 hover-lift">
-                <div class="card-body">
-                    <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
-                    <h3 class="mb-0">{{ stats.active_cases }}</h3>
-                    <p class="text-muted mb-0">Active Cases</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center h-100 hover-lift">
-                <div class="card-body">
-                    <i class="fas fa-eye fa-3x text-info mb-3"></i>
-                    <h3 class="mb-0">{{ stats.total_sightings }}</h3>
-                    <p class="text-muted mb-0">Total Sightings</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center h-100 hover-lift">
-                <div class="card-body">
-                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
-                    <h3 class="mb-0">{{ stats.resolved_cases }}</h3>
-                    <p class="text-muted mb-0">Resolved Cases</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center h-100 hover-lift">
-                <div class="card-body">
-                    <i class="fas fa-user-check fa-3x text-warning mb-3"></i>
-                    <h3 class="mb-0">{{ stats.high_match_sightings }}</h3>
-                    <p class="text-muted mb-0">High Face Match</p>
-                </div>
-            </div>
-        </div>
+    <div class="table-responsive">
+      <table class="pd-table">
+        <thead>
+          <tr>
+            <th>Photo</th>
+            <th>Name</th>
+            <th>Age / Gender</th>
+            <th>Last Seen</th>
+            <th>Date Reported</th>
+            <th>Sightings</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in cases %}
+          <tr>
+            <td>
+              {% if case.photo_filename %}
+                {% if case.photo_filename.startswith('http') %}
+                  <img src="{{ case.photo_filename }}" alt="{{ case.name }}" class="child-avatar">
+                {% else %}
+                  <img src="{{ url_for('static', filename='uploads/photos/' + case.photo_filename) }}"
+                       alt="{{ case.name }}" class="child-avatar">
+                {% endif %}
+              {% else %}
+                <div class="avatar-placeholder"><i class="fas fa-user"></i></div>
+              {% endif %}
+            </td>
+            <td><span class="child-name-cell">{{ case.name }}</span></td>
+            <td>{{ case.age }} yrs · {{ case.gender }}</td>
+            <td><span class="location-cell" title="{{ case.last_seen_location }}">{{ case.last_seen_location }}</span></td>
+            <td>{{ case.date_reported.strftime('%b %d, %Y') }}</td>
+            <td>
+              <span class="sightings-badge">
+                <i class="fas fa-eye" style="font-size:.65rem;"></i>
+                {{ case.sightings|length }}
+              </span>
+              {% set high_matches = case.sightings|selectattr('face_match_score')|selectattr('face_match_score','ge',70)|list %}
+              {% if high_matches|length > 0 %}
+                <span class="high-match-badge" title="High face match sightings">
+                  <i class="fas fa-user-check" style="font-size:.63rem;"></i>
+                  {{ high_matches|length }}
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if case.status == 'missing' %}
+                <span class="status-pill pill-missing"><span class="dot"></span>Missing</span>
+              {% elif case.status == 'found' %}
+                <span class="status-pill pill-found"><span class="dot"></span>Found</span>
+              {% else %}
+                <span class="status-pill pill-other"><span class="dot"></span>{{ case.status.title() }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="action-grp">
+                <a href="{{ url_for('police_case_detail', report_id=case.report_id) }}"
+                   class="act-btn view" data-tip="View Details">
+                  <i class="fas fa-eye"></i>
+                </a>
+                <a href="{{ url_for('download_poster', report_id=case.report_id) }}"
+                   class="act-btn poster" data-tip="Download Poster" target="_blank">
+                  <i class="fas fa-file-image"></i>
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr class="empty-state-row">
+            <td colspan="8">
+              <div class="empty-icon"><i class="fas fa-folder-open"></i></div>
+              <div class="empty-title">No cases on record</div>
+              <div class="empty-sub">Reports submitted will appear here in real time.</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
 
-    <!-- Cases List -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="fas fa-list me-2"></i>All Missing Children Cases
-                    </h5>
-                    <span class="badge bg-light text-dark">{{ cases|length }} cases</span>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Photo</th>
-                                    <th>Name</th>
-                                    <th>Age/Gender</th>
-                                    <th>Last Seen</th>
-                                    <th>Date Reported</th>
-                                    <th>Sightings</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for case in cases %}
-                                <tr>
-                                    <td>
-                                        {% if case.photo_filename %}
-                                        {% if case.photo_filename.startswith('http') %}
-                                        <img src="{{ case.photo_filename }}" alt="{{ case.name }}" class="rounded"
-                                            style="width: 50px; height: 50px; object-fit: cover;">
-                                        {% else %}
-                                        <img src="{{ url_for('static', filename='uploads/photos/' + case.photo_filename) }}"
-                                            alt="{{ case.name }}" class="rounded"
-                                            style="width: 50px; height: 50px; object-fit: cover;">
-                                        {% endif %}
-                                        {% else %}
-                                        <div class="bg-secondary rounded d-flex align-items-center justify-content-center"
-                                            style="width: 50px; height: 50px;">
-                                            <i class="fas fa-user text-white"></i>
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td><strong>{{ case.name }}</strong></td>
-                                    <td>{{ case.age }} yrs / {{ case.gender }}</td>
-                                    <td class="text-truncate" style="max-width: 200px;">{{ case.last_seen_location }}
-                                    </td>
-                                    <td>{{ case.date_reported.strftime('%b %d, %Y') }}</td>
-                                    <td>
-                                        <span class="badge bg-info">{{ case.sightings|length }}</span>
-                                        {% set high_matches =
-                                        case.sightings|selectattr('face_match_score')|selectattr('face_match_score',
-                                        'ge', 70)|list %}
-                                        {% if high_matches|length > 0 %}
-                                        <span class="badge bg-success" title="High face match">
-                                            <i class="fas fa-user-check"></i> {{ high_matches|length }}
-                                        </span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if case.status == 'missing' %}
-                                        <span class="badge bg-danger">Missing</span>
-                                        {% elif case.status == 'found' %}
-                                        <span class="badge bg-success">Found</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary">{{ case.status }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm">
-                                            <a href="{{ url_for('police_case_detail', report_id=case.report_id) }}"
-                                                class="btn btn-outline-primary" title="View Details">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            <a href="{{ url_for('download_poster', report_id=case.report_id) }}"
-                                                class="btn btn-outline-info" title="Download Poster" target="_blank">
-                                                <i class="fas fa-file-image"></i>
-                                            </a>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% else %}
-                                <tr>
-                                    <td colspan="8" class="text-center py-4 text-muted">
-                                        <i class="fas fa-check-circle fa-2x mb-2"></i>
-                                        <p class="mb-0">No cases found</p>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  <!-- Footer -->
+  <div class="pd-footer">
+    SACHET Police Portal &nbsp;·&nbsp; Restricted Access &nbsp;·&nbsp; {{ cases|length }} cases in system
+  </div>
+
 </div>
 {% endblock %}

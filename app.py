@@ -240,11 +240,12 @@ def send_telegram_broadcast(message):
     if not token or not chat_id:
         print("❌ Telegram credentials not configured")
         return 0
-    
+
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
         'chat_id': chat_id,
-        'text': message
+        'text': message,
+        'parse_mode': 'HTML'
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
@@ -254,6 +255,30 @@ def send_telegram_broadcast(message):
     except Exception as e:
         print(f"❌ Telegram send error: {str(e)}")
         return 0
+
+def send_telegram_photo(photo_url, caption):
+    """Send a photo with caption via Telegram sendPhoto API."""
+    token = app.config.get('TELEGRAM_BOT_TOKEN')
+    chat_id = app.config.get('TELEGRAM_CHAT_ID')
+    if not token or not chat_id:
+        print("❌ Telegram credentials not configured")
+        return 0
+
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    payload = {
+        'chat_id': chat_id,
+        'photo': photo_url,
+        'caption': caption,
+        'parse_mode': 'HTML'
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+        print("✅ Telegram photo alert sent")
+        return 1
+    except Exception as e:
+        print(f"❌ Telegram photo send error: {str(e)}, falling back to text")
+        return send_telegram_broadcast(caption)
 
 # Database Models
 class MissingChild(db.Model):
@@ -1045,13 +1070,22 @@ def report_missing():
         db.session.add(missing_child)
         db.session.commit()
         
-        # Send SMS alert
-        report_url = request.url_root + f"found/{report_id}"
-        sms_message = f"MISSING: {name}, {age}yrs, {gender}, {location}. Report sightings: {report_url}"
-        
-        # Area-wise broadcasting at report time as well
-        target_numbers = select_numbers_for_location(location)
-        sent_count = send_sms_alert_to_numbers(sms_message, target_numbers)
+        # Build rich Telegram alert
+        report_url = request.url_root.rstrip('/') + f"/found/{report_id}"
+        telegram_caption = (
+            f"🚨 <b>MISSING CHILD ALERT</b> 🚨\n\n"
+            f"<b>Name:</b> {name}\n"
+            f"<b>Age:</b> {age} years\n"
+            f"<b>Gender:</b> {gender}\n"
+            f"<b>Last Seen:</b> {location}\n\n"
+            f"<b>Report sightings:</b> {report_url}"
+        )
+
+        # Send photo+caption if photo available, else text-only
+        if photo_url and photo_url.startswith('http'):
+            sent_count = send_telegram_photo(photo_url, telegram_caption)
+        else:
+            sent_count = send_telegram_broadcast(telegram_caption)
         
         if sent_count > 0:
             flash(f'Missing child report created successfully! Report ID: {report_id}. Alert sent to {sent_count} subscribers.', 'success')
@@ -1174,16 +1208,22 @@ def report_found(report_id):
             except Exception as e:
                 print(f"⚠️ Face comparison skipped: {e}")
         
-        report_url = request.url_root + f"found/{report_id}"
-        sms_message = (
-            f"SIGHTING: {missing_child.name} spotted at {location}. "
-            f"Time: {datetime.now().strftime('%H:%M')}. ID: {report_id}. "
-            f"Report/updates: {report_url}"
+        # Build rich sighting Telegram alert
+        report_url = request.url_root.rstrip('/') + f"/found/{report_id}"
+        sighting_caption = (
+            f"👁️ <b>SIGHTING REPORTED</b>\n\n"
+            f"<b>Child:</b> {missing_child.name}\n"
+            f"<b>Spotted At:</b> {location}\n"
+            f"<b>Time:</b> {datetime.now().strftime('%I:%M %p')}\n"
+            f"<b>Case ID:</b> {report_id}\n\n"
+            f"<b>Case updates &amp; details:</b> {report_url}"
         )
-        
-        # Area-wise broadcasting: choose numbers based on location text
-        target_numbers = select_numbers_for_location(location)
-        sent_count = send_sms_alert_to_numbers(sms_message, target_numbers)
+
+        if sighting_photo_url and sighting_photo_url.startswith('http'):
+            target_numbers = send_telegram_photo(sighting_photo_url, sighting_caption)
+        else:
+            target_numbers = send_telegram_broadcast(sighting_caption)
+        sent_count = target_numbers
         
         # Update risk zones
         try:
@@ -1846,7 +1886,7 @@ def debug_case(report_id):
 
 if __name__ == '__main__':
     create_tables()
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5002))
     app.run(host='0.0.0.0', port=port, debug=app.config['DEBUG'])
 else:
     # This runs in production with Gunicorn

@@ -1,149 +1,671 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- Hero Section -->
-<section class="relative rounded-xl overflow-hidden mb-12 bg-gradient-to-br from-primary to-primary-container p-8 md:p-12 shadow-2xl">
-    <div class="relative z-10 max-w-2xl">
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary text-white text-xs font-bold uppercase tracking-widest font-label mb-6">
-            <span class="material-symbols-outlined text-sm" data-icon="emergency" style="font-variation-settings: 'FILL' 1;">emergency</span>
-            Emergency Network Live
-        </div>
-        <h1 class="text-4xl md:text-5xl font-extrabold text-white font-headline leading-tight tracking-tight mb-4">
-            Missing Child Alert System
-        </h1>
-        <p class="text-on-primary-container text-lg font-body leading-relaxed mb-8">
-            Every second counts. Our synchronized response network bridges the gap between authorities and the community to bring children home safely.
-        </p>
-    </div>
-    <div class="absolute right-0 top-0 h-full w-1/3 opacity-10 hidden md:block">
-        <span class="material-symbols-outlined text-[300px]" data-icon="person_search">person_search</span>
-    </div>
-</section>
+<style>
+  /* ───────── Page-level tokens ───────── */
+  :root {
+    --clr-navy:      hsl(220, 60%, 18%);
+    --clr-crimson:   hsl(0, 72%, 51%);
+    --clr-muted:     hsl(220, 10%, 52%);
+    --clr-bg:        hsl(220, 14%, 97%);
+    --clr-surface:   #ffffff;
+    --clr-border:    hsl(220, 13%, 90%);
+  }
 
-<div class="flex flex-col lg:flex-row gap-8">
-    <!-- Main Content: Recent Cases -->
-    <div class="flex-grow space-y-8">
-        <div class="flex items-center justify-between mb-2">
-            <div>
-                <span class="text-xs font-bold uppercase tracking-widest text-on-surface-variant font-label block mb-1">Live Updates</span>
-                <h2 class="text-2xl font-bold font-headline text-primary">Recent Active Cases</h2>
-            </div>
-            {% if recent_cases %}
-            <div class="flex gap-2 items-center">
-                <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-                <span class="text-xs font-medium text-secondary uppercase font-label">{{ recent_cases|length }} Active Alerts</span>
-            </div>
-            {% endif %}
-        </div>
-        
-        <div class="grid grid-cols-1 gap-6">
-            {% if recent_cases %}
-            {% for case in recent_cases %}
-            <article class="group hover-lift bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col md:flex-row shadow-sm border border-outline-variant/10">
-                <!-- Case Image -->
-                <div class="relative w-full md:w-64 h-64 md:h-auto overflow-hidden bg-surface-container-high flex items-center justify-center">
-                    {% if case.photo_filename %}
-                        {% if case.photo_filename.startswith('http') %}
-                            <img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="{{ case.name }}" src="{{ case.photo_filename }}"/>
-                        {% else %}
-                            <img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="{{ case.name }}" src="{{ url_for('static', filename='uploads/photos/' + case.photo_filename) }}"/>
-                        {% endif %}
-                    {% else %}
-                        <span class="material-symbols-outlined text-6xl text-outline-variant">person</span>
-                    {% endif %}
-                    <div class="absolute top-4 right-4 glass-panel px-3 py-1 rounded-full flex items-center gap-1.5 shadow-lg border border-white/20">
-                        <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                        <span class="text-[10px] font-bold text-primary uppercase tracking-tighter">Active Alert</span>
-                    </div>
-                </div>
-                
-                <!-- Case Details -->
-                <div class="flex-grow p-6 flex flex-col justify-between">
-                    <div>
-                        <div class="flex justify-between items-start mb-2">
-                            <h3 class="text-2xl font-bold font-headline text-primary">{{ case.name }}</h3>
-                            <span class="text-xs font-bold text-on-surface-variant bg-surface-container-high px-2 py-1 rounded">{{ case.age }} Years Old</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-y-3 gap-x-4 mb-4 mt-4">
-                            <div class="flex items-center gap-2 text-on-surface-variant text-sm font-medium">
-                                <span class="material-symbols-outlined text-sm text-primary" data-icon="location_on">location_on</span>
-                                {{ case.last_seen_location }}
-                            </div>
-                            <div class="flex items-center gap-2 text-on-surface-variant text-sm font-medium">
-                                <span class="material-symbols-outlined text-sm text-primary" data-icon="schedule">schedule</span>
-                                {{ case.date_reported.strftime('%B %d, %Y') }}
-                            </div>
-                            <div class="flex items-center gap-2 text-on-surface-variant text-sm font-medium">
-                                <span class="material-symbols-outlined text-sm text-primary" data-icon="wc">wc</span>
-                                {{ case.gender }}
-                            </div>
-                        </div>
-                        <p class="text-sm text-on-surface-variant line-clamp-2 leading-relaxed mb-6 mt-2">
-                            {{ case.description[:150] }}{% if case.description|length > 150 %}...{% endif %}
-                        </p>
-                    </div>
-                    <div class="flex flex-wrap gap-3">
-                        <a href="{{ url_for('case_detail', report_id=case.report_id) }}" class="flex-grow text-center md:flex-grow-0 px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-bold transition-all hover:bg-primary-container active:scale-95">
-                            View Details
-                        </a>
-                        <a href="{{ url_for('report_found', report_id=case.report_id) }}" class="flex-grow text-center md:flex-grow-0 px-6 py-2.5 bg-secondary/10 text-secondary border border-secondary/20 rounded-lg text-sm font-bold transition-all hover:bg-secondary hover:text-white active:scale-95">
-                            Report Sighting
-                        </a>
-                    </div>
-                </div>
-            </article>
-            {% endfor %}
-            {% else %}
-            <!-- Fallback / Empty State -->
-            <div class="py-20 text-center bg-surface-container-low rounded-xl border-2 border-dashed border-outline-variant">
-                <span class="material-symbols-outlined text-6xl text-outline-variant mb-4" data-icon="search_off">search_off</span>
-                <h3 class="text-xl font-bold text-primary mb-2">Great News!</h3>
-                <p class="text-on-surface-variant text-lg">No recent missing children cases in your area.</p>
-            </div>
-            {% endif %}
-        </div>
+  /* ── Ambient background ── */
+  .pub-bg {
+    background:
+      radial-gradient(ellipse at 60% 0%, hsl(220, 30%, 94%) 0%, hsl(220, 14%, 97%) 60%);
+    position: relative;
+  }
+  /* Dot-grid texture */
+  .pub-bg::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, hsl(220,20%,60%) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.025;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .pub-bg > * { position: relative; z-index: 1; }
+
+  /* ── Hero ── */
+  .hero-section {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    background: linear-gradient(135deg, hsl(220, 60%, 16%) 0%, hsl(220, 60%, 22%) 100%);
+    padding: 56px 48px;
+    margin-bottom: 36px;
+    box-shadow: 0 4px 40px rgba(0,21,42,0.18);
+    animation: fadeUp 0.5s ease both;
+  }
+  /* Scanline overlay */
+  .hero-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(255,255,255,0.015) 3px,
+      rgba(255,255,255,0.015) 4px
+    );
+    pointer-events: none;
+  }
+  /* Blurred sphere accents */
+  .hero-section::after {
+    content: '';
+    position: absolute;
+    width: 340px; height: 340px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 50%;
+    filter: blur(60px);
+    top: -80px; right: -60px;
+    pointer-events: none;
+  }
+
+  /* Frosted badge */
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.16);
+    backdrop-filter: blur(8px);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 18px;
+  }
+  .badge-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: hsl(142, 70%, 50%);
+    animation: badgePulse 2.5s ease-in-out infinite;
+  }
+  @keyframes badgePulse {
+    0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,222,128,0.5); }
+    50%      { opacity: 0.65; box-shadow: 0 0 0 5px rgba(74,222,128,0); }
+  }
+
+  .hero-title {
+    font-family: 'Manrope', sans-serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 900;
+    color: white;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 14px;
+  }
+  .hero-sub {
+    font-size: 0.95rem;
+    color: rgba(255,255,255,0.55);
+    line-height: 1.7;
+    max-width: 520px;
+    margin-bottom: 0;
+  }
+  .hero-deco {
+    position: absolute;
+    right: 40px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 220px !important;
+    opacity: 0.04;
+    color: white;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ── Section header ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .live-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--clr-muted);
+    margin-bottom: 5px;
+  }
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: hsl(142, 70%, 45%);
+    animation: liveDot 2s ease-in-out infinite;
+  }
+  @keyframes liveDot {
+    0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+  }
+  .section-title {
+    font-family: 'Manrope', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: hsl(220, 60%, 16%);
+    letter-spacing: -0.02em;
+    position: relative;
+    display: inline-block;
+  }
+  .alert-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: hsl(0,100%,97%);
+    border: 1px solid hsl(0,72%,88%);
+    color: hsl(0,72%,44%);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    animation: alertPulse 3s ease-in-out infinite;
+  }
+  .alert-badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: hsl(0,72%,51%);
+  }
+  @keyframes alertPulse {
+    0%,90%,100% { opacity: 1; }
+    95%          { opacity: 0.6; }
+  }
+
+  /* ── Case cards ── */
+  .case-card {
+    background: var(--clr-surface);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid hsl(0, 72%, 51%);
+    transition: transform 220ms ease, box-shadow 220ms ease;
+    animation: fadeUp 0.4s ease both;
+  }
+  .case-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 32px rgba(0,21,42,0.11);
+  }
+  .case-card:nth-child(1) { animation-delay: 0.05s; }
+  .case-card:nth-child(2) { animation-delay: 0.13s; }
+  .case-card:nth-child(3) { animation-delay: 0.21s; }
+  .case-card:nth-child(n+4) { animation-delay: 0.28s; }
+
+  @media (max-width: 640px) {
+    .case-card { flex-direction: column; }
+  }
+
+  /* Photo area */
+  .case-photo {
+    position: relative;
+    width: 220px;
+    min-width: 220px;
+    overflow: hidden;
+    background: hsl(220, 14%, 90%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  @media (max-width: 640px) {
+    .case-photo { width: 100%; min-width: unset; height: 220px; }
+  }
+  .case-photo img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform 500ms ease;
+    /* Subtle blue-tint duotone feel */
+    filter: saturate(0.85) brightness(0.97);
+  }
+  .case-card:hover .case-photo img { transform: scale(1.06); }
+
+  /* Active Alert badge */
+  .active-badge {
+    position: absolute;
+    top: 12px; right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 20px;
+    padding: 3px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  .active-badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: hsl(0, 72%, 51%);
+    animation: activeDot 2s ease-in-out infinite;
+  }
+  @keyframes activeDot {
+    0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(185,28,28,0.4); }
+    50%      { opacity: 0.5; box-shadow: 0 0 0 4px rgba(185,28,28,0); }
+  }
+  .active-badge span {
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: hsl(220, 60%, 16%);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  /* Card body */
+  .case-body {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .case-name-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .case-name {
+    font-family: 'Manrope', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: hsl(220, 60%, 16%);
+    letter-spacing: -0.02em;
+  }
+  .case-age-pill {
+    background: hsl(220, 14%, 95%);
+    color: hsl(220, 15%, 40%);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    border: 1px solid hsl(220,13%,88%);
+  }
+  .case-meta {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 16px;
+    margin: 8px 0;
+  }
+  .case-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: hsl(220, 10%, 48%);
+    font-weight: 500;
+  }
+  .case-meta-item .material-symbols-outlined {
+    font-size: 15px !important;
+    color: hsl(220, 60%, 40%);
+  }
+  .case-desc {
+    font-size: 0.82rem;
+    color: hsl(220, 10%, 50%);
+    line-height: 1.65;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .case-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .btn-primary-solid {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 22px;
+    background: hsl(220, 60%, 18%);
+    color: white;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: transform 150ms, box-shadow 150ms, background 150ms;
+    flex-grow: 1;
+    justify-content: center;
+    text-decoration: none;
+  }
+  .btn-primary-solid:hover {
+    background: hsl(220, 60%, 22%);
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(0,21,42,0.2);
+    color: white;
+  }
+  .btn-secondary-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 22px;
+    background: hsl(0,100%,97%);
+    color: hsl(0,72%,44%);
+    border: 1px solid hsl(0,72%,88%);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    transition: transform 150ms, background 150ms, border-color 150ms;
+    flex-grow: 1;
+    justify-content: center;
+    text-decoration: none;
+  }
+  .btn-secondary-ghost:hover {
+    background: hsl(0,72%,51%);
+    border-color: hsl(0,72%,51%);
+    color: white;
+    transform: scale(1.02);
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    padding: 80px 24px;
+    text-align: center;
+    background: white;
+    border-radius: 12px;
+    border: 2px dashed hsl(220,13%,88%);
+    animation: fadeUp 0.4s ease both;
+  }
+  .empty-state .mat-icon {
+    font-size: 56px !important;
+    color: hsl(220,13%,80%);
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar-card {
+    background: rgba(16, 42, 67, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 14px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.06) inset,
+      0 0 30px hsla(220,60%,20%,0.15);
+    animation: fadeUp 0.5s 0.2s ease both;
+  }
+  .sidebar-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  }
+  .sidebar-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+  .sidebar-title-icon {
+    width: 24px; height: 24px;
+    color: hsl(0, 72%, 65%);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 16px; }
+  .step-item { display: flex; align-items: flex-start; gap: 12px; }
+  .step-num {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, hsl(0,72%,51%), hsl(0,72%,38%));
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+    box-shadow: 0 2px 8px rgba(185,28,28,0.35);
+  }
+  .step-text { font-size: 0.8rem; color: rgba(255,255,255,0.78); line-height: 1.6; margin: 0; }
+
+  .sidebar-deco {
+    position: absolute;
+    right: -20px; bottom: -20px;
+    font-size: 110px !important;
+    color: rgba(255,255,255,0.03);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Emergency card */
+  .emergency-card {
+    background: linear-gradient(135deg, hsl(0,72%,46%), hsl(0,72%,38%));
+    border-radius: 14px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(185,28,28,0.25);
+    animation: fadeUp 0.5s 0.3s ease both;
+  }
+  .emergency-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  }
+  .emergency-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+  }
+  .emergency-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 9px;
+    color: white;
+    font-weight: 700;
+    font-size: 0.88rem;
+    text-decoration: none;
+    transition: background 150ms;
+  }
+  .emergency-btn:hover { background: rgba(0,0,0,0.35); color: white; }
+  .emergency-num {
+    font-family: 'Manrope', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<div class="pub-bg">
+
+  <!-- ── Hero ── -->
+  <section class="hero-section mb-10">
+    <div style="position:relative;z-index:1;max-width:600px;">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        Emergency Network Live
+      </div>
+      <h1 class="hero-title">Missing Child<br>Alert System</h1>
+      <p class="hero-sub">
+        Every second counts. Our synchronized response network bridges authorities and the community to bring children home safely.
+      </p>
     </div>
-    
+    <span class="material-symbols-outlined hero-deco" aria-hidden="true">person_search</span>
+  </section>
+
+  <!-- ── Main Grid ── -->
+  <div class="grid grid-cols-12 gap-8 items-start">
+
+    <!-- Main Content -->
+    <div class="col-span-12 lg:col-span-9">
+
+      <!-- Section Header -->
+      <div class="section-header">
+        <div>
+          <div class="live-label">
+            <span class="live-dot"></span>
+            Live Updates
+          </div>
+          <h2 class="section-title">Recent Active Cases</h2>
+        </div>
+        {% if recent_cases %}
+        <div class="alert-badge">
+          <span class="alert-badge-dot"></span>
+          {{ recent_cases|length }} Active Alert{{ 's' if recent_cases|length != 1 else '' }}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Case Cards -->
+      <div class="flex flex-col gap-5">
+        {% if recent_cases %}
+          {% for case in recent_cases %}
+          <article class="case-card">
+
+            <!-- Photo -->
+            <div class="case-photo">
+              {% if case.photo_filename %}
+                {% if case.photo_filename.startswith('http') %}
+                  <img src="{{ case.photo_filename }}" alt="{{ case.name }}">
+                {% else %}
+                  <img src="{{ url_for('static', filename='uploads/photos/' + case.photo_filename) }}" alt="{{ case.name }}">
+                {% endif %}
+              {% else %}
+                <span class="material-symbols-outlined" style="font-size:56px;color:hsl(220,13%,72%);">person</span>
+              {% endif %}
+              <div class="active-badge">
+                <span class="active-badge-dot"></span>
+                <span>Active Alert</span>
+              </div>
+            </div>
+
+            <!-- Body -->
+            <div class="case-body">
+              <div>
+                <div class="case-name-row">
+                  <h3 class="case-name">{{ case.name }}</h3>
+                  <span class="case-age-pill">{{ case.age }} yrs old</span>
+                </div>
+                <div class="case-meta">
+                  <div class="case-meta-item">
+                    <span class="material-symbols-outlined" data-icon="location_on">location_on</span>
+                    {{ case.last_seen_location }}
+                  </div>
+                  <div class="case-meta-item">
+                    <span class="material-symbols-outlined" data-icon="schedule">schedule</span>
+                    {{ case.date_reported.strftime('%b %d, %Y') }}
+                  </div>
+                  <div class="case-meta-item">
+                    <span class="material-symbols-outlined" data-icon="wc">wc</span>
+                    {{ case.gender }}
+                  </div>
+                </div>
+                <p class="case-desc">{{ case.description[:160] }}{% if case.description|length > 160 %}...{% endif %}</p>
+              </div>
+              <div class="case-actions">
+                <a href="{{ url_for('case_detail', report_id=case.report_id) }}" class="btn-primary-solid">
+                  <span class="material-symbols-outlined" style="font-size:16px;">open_in_new</span>
+                  View Details
+                </a>
+                <a href="{{ url_for('report_found', report_id=case.report_id) }}" class="btn-secondary-ghost">
+                  <span class="material-symbols-outlined" style="font-size:16px;">visibility</span>
+                  Report Sighting
+                </a>
+              </div>
+            </div>
+          </article>
+          {% endfor %}
+
+        {% else %}
+        <div class="empty-state">
+          <span class="material-symbols-outlined mat-icon">search_off</span>
+          <h3 style="font-family:'Manrope',sans-serif;font-size:1.2rem;font-weight:800;color:hsl(220,60%,18%);margin-bottom:6px;">Great News!</h3>
+          <p style="font-size:0.9rem;color:hsl(220,10%,55%);">No active missing children cases in your area right now.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Sidebar -->
-    <aside class="w-full lg:w-80 space-y-8">
-        <!-- Important Info Card -->
-        <section class="bg-primary-container text-white rounded-xl p-6 shadow-xl relative overflow-hidden">
-            <div class="relative z-10">
-                <h3 class="font-headline font-bold text-lg mb-6 flex items-start gap-3">
-                    <span class="material-symbols-outlined text-secondary w-6 h-6 flex items-center justify-center shrink-0" data-icon="info" style="font-variation-settings: 'FILL' 1; font-size: 20px;">info</span>
-                    <span class="leading-tight">What to do first?</span>
-                </h3>
-                <ul class="list-none p-0 m-0 space-y-5">
-                    <li class="flex items-start gap-3">
-                        <span class="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                        <p class="text-xs leading-normal opacity-90 m-0">Call local emergency services (112) immediately.</p>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                        <p class="text-xs leading-normal opacity-90 m-0">Provide a recent clear photograph and physical description.</p>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">3</span>
-                        <p class="text-xs leading-normal opacity-90 m-0">Report on this portal by clicking 'Report Missing'.</p>
-                    </li>
-                </ul>
-            </div>
-            <div class="absolute -right-10 -bottom-10 opacity-5">
-                <span class="material-symbols-outlined text-[150px]" data-icon="security">security</span>
-            </div>
-        </section>
+    <aside class="col-span-12 lg:col-span-3 space-y-5 self-start sticky top-24">
 
-        <!-- Emergency Contacts -->
-        <section class="bg-secondary text-white rounded-xl p-6 shadow-xl relative overflow-hidden">
-            <h3 class="font-headline font-bold text-lg mb-4 flex items-center gap-2 text-white">
-                <span class="material-symbols-outlined">call</span>
-                Emergency Contacts
-            </h3>
-            <a href="tel:112" class="w-full flex items-center justify-center gap-2 text-white bg-black/20 hover:bg-black/40 py-3 rounded-lg font-bold transition-all">
-                <span class="material-symbols-outlined">phone</span>
-                112 - Police Emergency
-            </a>
-        </section>
+      <!-- What to do first -->
+      <div class="sidebar-card">
+        <div class="sidebar-title">
+          <span class="material-symbols-outlined sidebar-title-icon" style="font-variation-settings:'FILL' 1;">info</span>
+          <span>What to do first?</span>
+        </div>
+        <ul class="step-list">
+          <li class="step-item">
+            <span class="step-num">1</span>
+            <p class="step-text">Call local emergency services <strong style="color:rgba(255,255,255,0.95);">(112)</strong> immediately.</p>
+          </li>
+          <li class="step-item">
+            <span class="step-num">2</span>
+            <p class="step-text">Provide a recent clear photograph and physical description.</p>
+          </li>
+          <li class="step-item">
+            <span class="step-num">3</span>
+            <p class="step-text">Report on this portal by clicking <strong style="color:rgba(255,255,255,0.95);">'Report Missing'</strong>.</p>
+          </li>
+        </ul>
+        <span class="material-symbols-outlined sidebar-deco" aria-hidden="true">security</span>
+      </div>
+
+      <!-- Emergency Contacts -->
+      <div class="emergency-card">
+        <div class="emergency-title">
+          <span class="material-symbols-outlined" style="font-size:20px;">call</span>
+          Emergency Contacts
+        </div>
+        <a href="tel:112" class="emergency-btn">
+          <span class="material-symbols-outlined" style="font-size:20px;">phone</span>
+          <span class="emergency-num">112</span>
+          <span style="font-size:0.78rem;opacity:0.85;">Police Emergency</span>
+        </a>
+      </div>
+
     </aside>
+  </div>
+
 </div>
 {% endblock %}
