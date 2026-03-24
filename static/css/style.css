@@ -422,9 +422,12 @@ main.container {
 footer {
     background: rgba(44, 62, 80, 0.95) !important;
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     color: white;
     padding: 2rem 0;
     margin-top: auto;
+    position: relative;
+    z-index: 40;
 }
 
 

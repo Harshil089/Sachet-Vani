@@ -507,16 +507,17 @@
                 if (!origin || !history.length) {
                     return;
                 }
-                var olderPalette = ['#6f42c1', '#20c997', '#0d6efd', '#f39c12', '#8e44ad'];
-                history.forEach(function (entry, index) {
-                    var color = (index === history.length - 1) ? '#dc3545' : olderPalette[index % olderPalette.length];
-                    L.polyline([origin, [entry.lat, entry.lng]], {
+                // Only draw the latest prediction line
+                var lastEntry = history[history.length - 1];
+                if (lastEntry) {
+                    var color = '#dc3545';
+                    L.polyline([origin, [lastEntry.lat, lastEntry.lng]], {
                         color: color,
                         weight: 4,
                         opacity: 0.85,
-                        dashArray: (index === history.length - 1) ? null : '8,8'
-                    }).addTo(map).bindPopup(index === history.length - 1 ? 'Latest ML Prediction Path' : 'Previous ML Prediction Path');
-                });
+                        dashArray: null
+                    }).addTo(map).bindPopup('Latest ML Prediction Path');
+                }
             }
 
             // Add last seen location marker (red)

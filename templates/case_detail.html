@@ -463,42 +463,39 @@
                 });
             }
 
-            history.forEach(function (entry, index) {
-                var isLatest = index === history.length - 1;
-                var color = isLatest ? '#dc3545' : olderPalette[index % olderPalette.length];
-                L.polyline([origin, [entry.lat, entry.lng]], {
+            // Only draw the latest prediction line
+            var lastEntry = history[history.length - 1];
+            if (lastEntry) {
+                var color = '#dc3545';
+                L.polyline([origin, [lastEntry.lat, lastEntry.lng]], {
                     color: color,
                     weight: 4,
                     opacity: 0.85,
-                    dashArray: isLatest ? null : '8,8'
-                }).addTo(map).bindPopup(isLatest ? 'Latest ML Prediction Path' : 'Previous ML Prediction Path');
+                    dashArray: null
+                }).addTo(map).bindPopup('Latest ML Prediction Path');
 
-                if (isLatest) {
-                    var endPoint = [entry.lat, entry.lng];
-                    var glowStart = lerpPoint(origin, endPoint, 0.86);
-                    L.polyline([glowStart, endPoint], {
-                        color: color,
-                        weight: 10,
-                        opacity: 0.2,
-                        className: 'ml-latest-trail'
-                    }).addTo(map);
-                    L.polyline([glowStart, endPoint], {
-                        color: color,
-                        weight: 6,
-                        opacity: 0.45
-                    }).addTo(map);
-                }
+                var endPoint = [lastEntry.lat, lastEntry.lng];
+                var glowStart = lerpPoint(origin, endPoint, 0.86);
+                L.polyline([glowStart, endPoint], {
+                    color: color,
+                    weight: 10,
+                    opacity: 0.2,
+                    className: 'ml-latest-trail'
+                }).addTo(map);
+                L.polyline([glowStart, endPoint], {
+                    color: color,
+                    weight: 6,
+                    opacity: 0.45
+                }).addTo(map);
 
-                L.marker([entry.lat, entry.lng], {
-                    icon: createEndpointIcon(color, isLatest),
+                L.marker([lastEntry.lat, lastEntry.lng], {
+                    icon: createEndpointIcon(color, true),
                     keyboard: false,
-                    zIndexOffset: isLatest ? 1000 : 500
+                    zIndexOffset: 1000
                 }).addTo(map).bindPopup(
-                    isLatest
-                        ? ('Latest Predicted Endpoint<br><strong>Location:</strong> ' + (latestLocationName || 'Location name unavailable'))
-                        : 'Previous Predicted Endpoint'
+                    'Latest Predicted Endpoint<br><strong>Location:</strong> ' + (latestLocationName || 'Location name unavailable')
                 );
-            });
+            }
         }
 
         var history = addCurrentPredictionToHistory(mlData);

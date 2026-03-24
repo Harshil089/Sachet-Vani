@@ -51,23 +51,75 @@
         }
     </script>
     <style>
+        :root {
+            --nav-height: 60px;
+            --nav-z-index: 50;
+            --footer-z-index: 40;
+            --content-gap: 2rem;
+        }
+
         .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
         .hover-lift { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease; }
         .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 21, 42, 0.1), 0 10px 10px -5px rgba(0, 21, 42, 0.04); }
         a { text-decoration: none !important; }
-        body { min-height: max(884px, 100dvh); }
+        body { 
+            min-height: max(884px, 100dvh);
+            display: flex;
+            flex-direction: column;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ── Layout Structure ── */
+        body > header {
+            flex-shrink: 0;
+        }
+        body > main {
+            flex: 1;
+            margin-top: calc(var(--nav-height) + var(--content-gap));
+            position: relative;
+            z-index: 1;
+        }
+        body > footer {
+            flex-shrink: 0;
+        }
+
+        /* ── Fix Bootstrap Grid Overlap ── */
+        main > * {
+            position: relative;
+            z-index: 1;
+        }
+        
+        main .row {
+            margin-top: 0 !important;
+        }
+
+        main .d-flex {
+            position: relative !important;
+        }
+
+        /* Prevent card overlap with header */
+        main .card {
+            position: relative;
+            z-index: 1;
+        }
+
+        main #map {
+            position: relative;
+            z-index: 1;
+        }
 
         /* ── Frosted Navbar ── */
         .site-nav {
             position: fixed;
             top: 0; left: 0; right: 0;
-            z-index: 50;
+            z-index: var(--nav-z-index);
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0 28px;
-            height: 60px;
+            height: var(--nav-height);
             background: rgba(255, 255, 255, 0.82);
             -webkit-backdrop-filter: blur(16px) saturate(180%);
             backdrop-filter: blur(16px) saturate(180%);
@@ -134,6 +186,8 @@
             text-transform: uppercase;
             margin-left: 6px;
             transition: background 150ms, transform 120ms;
+            position: relative;
+            z-index: 1;
         }
         .nav-home-btn:hover {
             background: hsl(220, 60%, 22%);
@@ -141,7 +195,7 @@
         }
     </style>
 </head>
-<body class="bg-surface font-body text-on-surface overflow-x-hidden pt-24">
+<body class="bg-surface font-body text-on-surface overflow-x-hidden">
 
 <header class="site-nav" id="siteNav">
     <a href="{{ url_for('index') }}" class="nav-logo">
@@ -177,7 +231,7 @@
     })();
 </script>
 
-<main class="w-full px-6 lg:px-12 pb-12">
+<main class="w-full px-6 lg:px-12 pb-20">
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="mb-4">
