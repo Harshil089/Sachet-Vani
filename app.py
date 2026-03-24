@@ -484,9 +484,11 @@ def _evict_one_ml_cache_entry_if_needed():
 
 
 def _invalidate_case_ml_cache(report_id):
+    """Invalidate ML cache across all layers: Redis, Memory, and Database."""
     if not report_id:
         return
 
+    # Invalidate Redis cache
     redis_client = _get_redis_client()
     if redis_client:
         try:
@@ -494,11 +496,22 @@ def _invalidate_case_ml_cache(report_id):
         except Exception as e:
             print(f"⚠️ Redis cache delete failed for {report_id}: {e}")
 
+    # Invalidate in-memory cache
     with _ml_case_cache_lock:
         ML_CASE_CACHE.pop(report_id, None)
 
+    # Invalidate database cache
+    try:
+        MLCache.query.filter_by(report_id=report_id).delete()
+        db.session.commit()
+        print(f"✅ ML cache invalidated for case {report_id} (all layers)")
+    except Exception as e:
+        print(f"⚠️ Database cache delete failed for {report_id}: {e}")
+        db.session.rollback()
+
 
 def _get_cached_ml_outputs(report_id, signature):
+    """Get cached ML outputs from Redis → Memory → Database (persistent fallback)."""
     redis_client = _get_redis_client()
     if redis_client:
         try:
@@ -514,20 +527,36 @@ def _get_cached_ml_outputs(report_id, signature):
         except Exception as e:
             print(f"⚠️ Redis cache read failed for {report_id}: {e}")
 
+    # Check in-memory cache
     with _ml_case_cache_lock:
         entry = ML_CASE_CACHE.get(report_id)
-        if not entry:
-            return None
-        if entry.get('signature') != signature:
-            return None
-        return (
-            copy.deepcopy(entry.get('ml_prediction')),
-            copy.deepcopy(entry.get('ml_refined')),
-            copy.deepcopy(entry.get('ml_status')),
-        )
+        if entry and entry.get('signature') == signature:
+            return (
+                copy.deepcopy(entry.get('ml_prediction')),
+                copy.deepcopy(entry.get('ml_refined')),
+                copy.deepcopy(entry.get('ml_status')),
+            )
+
+    # Check database cache (persistent fallback)
+    try:
+        db_entry = MLCache.query.filter_by(report_id=report_id).first()
+        if db_entry and db_entry.signature == signature:
+            result = (
+                json.loads(db_entry.ml_prediction) if db_entry.ml_prediction else None,
+                json.loads(db_entry.ml_refined) if db_entry.ml_refined else None,
+                json.loads(db_entry.ml_status) if db_entry.ml_status else None,
+            )
+            # Restore to in-memory and Redis for faster future access
+            _store_cached_ml_outputs(report_id, signature, result[0], result[1], result[2])
+            return result
+    except Exception as e:
+        print(f"⚠️ Database cache read failed for {report_id}: {e}")
+
+    return None
 
 
 def _store_cached_ml_outputs(report_id, signature, ml_prediction, ml_refined, ml_status):
+    """Store ML cache in three layers: Redis (fast), Memory (fallback), Database (persistent)."""
     entry_payload = {
         'signature': signature,
         'ml_prediction': copy.deepcopy(ml_prediction),
@@ -536,6 +565,7 @@ def _store_cached_ml_outputs(report_id, signature, ml_prediction, ml_refined, ml
         'cached_at': time.time(),
     }
 
+    # Layer 1: Redis cache (If configured)
     redis_client = _get_redis_client()
     if redis_client:
         try:
@@ -547,9 +577,35 @@ def _store_cached_ml_outputs(report_id, signature, ml_prediction, ml_refined, ml
         except Exception as e:
             print(f"⚠️ Redis cache write failed for {report_id}: {e}")
 
+    # Layer 2: In-memory cache
     with _ml_case_cache_lock:
         _evict_one_ml_cache_entry_if_needed()
         ML_CASE_CACHE[report_id] = entry_payload
+
+    # Layer 3: Persistent database cache (survives app restart)
+    try:
+        db_entry = MLCache.query.filter_by(report_id=report_id).first()
+        if db_entry:
+            db_entry.signature = signature
+            db_entry.ml_prediction = json.dumps(ml_prediction, default=str)
+            db_entry.ml_refined = json.dumps(ml_refined, default=str)
+            db_entry.ml_status = json.dumps(ml_status, default=str)
+            db_entry.cached_at = datetime.utcnow()
+        else:
+            db_entry = MLCache(
+                report_id=report_id,
+                signature=signature,
+                ml_prediction=json.dumps(ml_prediction, default=str),
+                ml_refined=json.dumps(ml_refined, default=str),
+                ml_status=json.dumps(ml_status, default=str),
+                cached_at=datetime.utcnow()
+            )
+            db.session.add(db_entry)
+        db.session.commit()
+        print(f"✅ ML cache persisted to database for case {report_id}")
+    except Exception as e:
+        print(f"⚠️ Database cache write failed for {report_id}: {e}")
+        db.session.rollback()
 
 
 def _build_known_location_candidates(missing_child, sightings):
@@ -818,6 +874,27 @@ class Analytics(db.Model):
     analysis_data = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     insights = db.Column(db.Text)
+
+class MLCache(db.Model):
+    """Persistent ML cache stored in database - survives app restarts."""
+    id = db.Column(db.Integer, primary_key=True)
+    report_id = db.Column(db.String(100), nullable=False, unique=True)
+    signature = db.Column(db.String(40), nullable=False)  # SHA1 of ML inputs
+    ml_prediction = db.Column(db.Text, nullable=True)  # JSON string
+    ml_refined = db.Column(db.Text, nullable=True)     # JSON string
+    ml_status = db.Column(db.Text, nullable=True)      # JSON string
+    cached_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        """Return cache entry as dict with parsed JSON fields."""
+        return {
+            'report_id': self.report_id,
+            'signature': self.signature,
+            'ml_prediction': json.loads(self.ml_prediction) if self.ml_prediction else None,
+            'ml_refined': json.loads(self.ml_refined) if self.ml_refined else None,
+            'ml_status': json.loads(self.ml_status) if self.ml_status else None,
+            'cached_at': self.cached_at.isoformat() if self.cached_at else None,
+        }
 
 @login_manager.user_loader
 def load_user(user_id):
